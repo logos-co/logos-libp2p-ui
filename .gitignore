@@ -1,0 +1,13 @@
+.DS_Store
+result
+build
+build-qml
+build-plugin
+libs
+app/build
+CMakeLists.txt.user
+generated_code
+.cache
+
+# Local doctest preview output.
+doctests/preview-outputs/

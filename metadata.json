@@ -1,0 +1,21 @@
+{
+  "name": "libp2p_ui",
+  "display_name": "libp2p",
+  "version": "0.1.0",
+  "type": "ui_qml",
+  "category": "protocol",
+  "description": "Network console for managing the Logos libp2p module",
+  "main": "libp2p_ui_plugin",
+  "icon": "src/icons/libp2p.svg",
+  "view": "qml/Main.qml",
+  "dependencies": ["libp2p_module"],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["qt6.qtdeclarative"]
+    },
+    "external_libraries": [],
+    "cmake": { "find_packages": [], "extra_sources": [] }
+  }
+}
