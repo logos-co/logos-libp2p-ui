@@ -15,5 +15,3 @@ nix run
 nix build
 ```
 
-The app follows the same C++/Qt/QML/Nix structure as `logos-storage-ui`, with a
-C++ backend exposed to QML through Qt Remote Objects.
