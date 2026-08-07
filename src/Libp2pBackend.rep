@@ -1,0 +1,35 @@
+#include <QVariantMap>
+
+class Libp2pBackend
+{
+    ENUM NodeStatus {
+        Stopped = 0,
+        Starting = 1,
+        Running = 2,
+        Stopping = 3
+    }
+
+    PROP(NodeStatus status READONLY)
+    PROP(QString peerId READONLY)
+    PROP(QString listenAddress READONLY)
+    PROP(QString uiVersion READONLY)
+    PROP(int connectedPeers READONLY)
+    PROP(int activeStreams READONLY)
+    PROP(int gossipsubTopics READONLY)
+    PROP(int dhtRecords READONLY)
+    PROP(int relayReservations READONLY)
+
+    SLOT(void init(QString configJson))
+    SLOT(void start())
+    SLOT(void stop())
+    SLOT(void refreshOverview())
+    SLOT(QString defaultConfigJson())
+    SLOT(void logDebugInfo())
+
+    SIGNAL(initCompleted(bool success, QString error))
+    SIGNAL(startCompleted())
+    SIGNAL(startFailed(QString error))
+    SIGNAL(stopCompleted())
+    SIGNAL(overviewUpdated(QVariantMap overview))
+    SIGNAL(error(QString message))
+}
