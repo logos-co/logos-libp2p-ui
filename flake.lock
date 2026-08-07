@@ -415,16 +415,16 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1785247914,
-        "narHash": "sha256-W15T9ugMOkwjlySOpDxqK8UzCz4eCFMCcVRLGfbsQT0=",
+        "lastModified": 1785445744,
+        "narHash": "sha256-aLK2iPNsffW9Q2k2LlHq4BE6D25A6vmN9wPC+oz+M9o=",
         "owner": "vacp2p",
         "repo": "nim-libp2p",
-        "rev": "4116b2ff373232c95eb173834f7a8a881bb4828a",
+        "rev": "f169c5ed39f653a0718d00686a9fabc67194dabf",
         "type": "github"
       },
       "original": {
         "owner": "vacp2p",
-        "ref": "fix/cbind/nim-ffi-bump",
+        "ref": "master",
         "repo": "nim-libp2p",
         "type": "github"
       }
@@ -438,14 +438,17 @@
         "package-manager": "package-manager"
       },
       "locked": {
-        "lastModified": 1786094926,
-        "narHash": "sha256-cSy7M4MKCFczOlKtoOidaqKh+jGrNLW+0hgMAErSSwI=",
-        "path": "/home/vlado/workspace/ift/logos-libp2p-module",
-        "type": "path"
+        "lastModified": 1785608562,
+        "narHash": "sha256-CUk01830YaqRSRCQ15PljaJejATR5Qziiaiu0IqjKTk=",
+        "owner": "logos-co",
+        "repo": "logos-libp2p-module",
+        "rev": "a31c40d65c0dc155f6d142f428da3ac2debf9219",
+        "type": "github"
       },
       "original": {
-        "path": "/home/vlado/workspace/ift/logos-libp2p-module",
-        "type": "path"
+        "owner": "logos-co",
+        "repo": "logos-libp2p-module",
+        "type": "github"
       }
     },
     "logos-capability-module": {

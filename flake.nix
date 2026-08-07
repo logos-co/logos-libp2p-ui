@@ -4,7 +4,7 @@
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
-    libp2p_module.url = "path:/home/vlado/workspace/ift/logos-libp2p-module";
+    libp2p_module.url = "github:logos-co/logos-libp2p-module";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
