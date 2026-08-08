@@ -1,4 +1,5 @@
 #include <QVariantMap>
+#include <QVariantList>
 
 class Libp2pBackend
 {
@@ -16,6 +17,7 @@ class Libp2pBackend
     PROP(int connectedPeers READONLY)
     PROP(int activeStreams READONLY)
     PROP(int gossipsubTopics READONLY)
+    PROP(QVariantList subscribedTopics READONLY)
     PROP(int dhtRecords READONLY)
     PROP(int relayReservations READONLY)
 
@@ -23,6 +25,9 @@ class Libp2pBackend
     SLOT(void start())
     SLOT(void stop())
     SLOT(void refreshOverview())
+    SLOT(void gossipsubSubscribe(QString topic))
+    SLOT(void gossipsubUnsubscribe(QString topic))
+    SLOT(void gossipsubPublish(QString topic, QString message))
     SLOT(QString defaultConfigJson())
     SLOT(void logDebugInfo())
 
@@ -31,5 +36,8 @@ class Libp2pBackend
     SIGNAL(startFailed(QString error))
     SIGNAL(stopCompleted())
     SIGNAL(overviewUpdated(QVariantMap overview))
+    SIGNAL(gossipsubTopicSubscribed(QString topic))
+    SIGNAL(gossipsubTopicUnsubscribed(QString topic))
+    SIGNAL(gossipsubMessagePublished(QString topic))
     SIGNAL(error(QString message))
 }

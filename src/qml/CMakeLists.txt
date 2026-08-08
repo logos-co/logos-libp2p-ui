@@ -28,6 +28,7 @@ qt_add_qml_module(appqml
         Libp2pConsoleLayout.qml
         SidebarItem.qml
         OverviewScreen.qml
+        GossipsubScreen.qml
         CopyField.qml
         StatCard.qml
         PlaceholderScreen.qml
