@@ -13,6 +13,16 @@ Item {
     readonly property bool running: backend && backend.status === 2
     readonly property var topics: backend && backend.subscribedTopics !== undefined
                                   ? backend.subscribedTopics : []
+    readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
+
+    function metric(name) {
+        return metrics[name] === undefined ? 0 : metrics[name]
+    }
+
+    function refresh() {
+        if (backend)
+            backend.refreshMetrics()
+    }
 
     function subscribe() {
         if (backend)
@@ -27,6 +37,15 @@ Item {
     function publish() {
         if (backend)
             backend.gossipsubPublish(publishTopicField.text, messageField.text)
+    }
+
+    Component.onCompleted: refresh()
+
+    Timer {
+        interval: 5000
+        repeat: true
+        running: root.visible && root.running
+        onTriggered: root.refresh()
     }
 
     LogosScrollView {
@@ -59,6 +78,18 @@ Item {
                 }
             }
 
+            RowLayout {
+                Layout.fillWidth: true
+
+                Item { Layout.fillWidth: true }
+
+                LogosButton {
+                    text: "Refresh"
+                    enabled: root.running
+                    onClicked: root.refresh()
+                }
+            }
+
             LogosText {
                 Layout.fillWidth: true
                 visible: !root.running
@@ -66,6 +97,34 @@ Item {
                 font.pixelSize: Theme.typography.secondaryText
                 color: Theme.palette.warning
                 wrapMode: Text.Wrap
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width > 850 ? 3 : 1
+                columnSpacing: Theme.spacing.medium
+                rowSpacing: Theme.spacing.medium
+
+                StatCard {
+                    Layout.fillWidth: true
+                    title: "Subscribed topics"
+                    value: root.topics.length
+                    iconSource: "assets/gossipsub.svg"
+                }
+
+                StatCard {
+                    Layout.fillWidth: true
+                    title: "Messages published"
+                    value: root.metric("gossipsubPublished")
+                    iconSource: "assets/gossipsub.svg"
+                }
+
+                StatCard {
+                    Layout.fillWidth: true
+                    title: "Messages received"
+                    value: root.metric("gossipsubReceived")
+                    iconSource: "assets/gossipsub.svg"
+                }
             }
 
             LogosText {

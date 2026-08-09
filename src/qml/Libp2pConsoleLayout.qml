@@ -117,7 +117,15 @@ Rectangle {
                         return overviewComponent
                     if (root.selectedIndex === 3)
                         return gossipsubComponent
-                    return placeholderComponent
+                    if (root.selectedIndex === 1)
+                        return peersComponent
+                    if (root.selectedIndex === 2)
+                        return streamsComponent
+                    if (root.selectedIndex === 4)
+                        return dhtComponent
+                    if (root.selectedIndex === 5)
+                        return serviceDiscoveryComponent
+                    return settingsComponent
                 }
             }
         }
@@ -131,13 +139,9 @@ Rectangle {
         }
     }
 
-    Component {
-        id: placeholderComponent
+    Component { id: peersComponent; PeersScreen { backend: root.backend } }
 
-        PlaceholderScreen {
-            title: root.screens[root.selectedIndex].title
-        }
-    }
+    Component { id: streamsComponent; StreamsScreen { backend: root.backend } }
 
     Component {
         id: gossipsubComponent
@@ -146,4 +150,10 @@ Rectangle {
             backend: root.backend
         }
     }
+
+    Component { id: dhtComponent; DhtScreen { backend: root.backend } }
+
+    Component { id: serviceDiscoveryComponent; ServiceDiscoveryScreen { backend: root.backend } }
+
+    Component { id: settingsComponent; SettingsScreen {} }
 }
