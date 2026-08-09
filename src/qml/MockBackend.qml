@@ -12,6 +12,7 @@ QtObject {
     property int connectedPeers: 0
     property int activeStreams: 0
     property int gossipsubTopics: 0
+    property var subscribedTopics: []
     property int dhtRecords: 0
     property int relayReservations: 0
 
@@ -20,6 +21,9 @@ QtObject {
     signal startFailed(string error)
     signal stopCompleted
     signal overviewUpdated(var overview)
+    signal gossipsubTopicSubscribed(string topic)
+    signal gossipsubTopicUnsubscribed(string topic)
+    signal gossipsubMessagePublished(string topic)
     signal error(string message)
 
     function init(configJson) {
@@ -38,7 +42,67 @@ QtObject {
     function stop() {
         status = 0
         connectedPeers = 0
+        gossipsubTopics = 0
+        subscribedTopics = []
         stopCompleted()
+    }
+
+    function gossipsubSubscribe(topic) {
+        topic = topic.trim()
+        if (status !== 2) {
+            error("Cannot subscribe to a GossipSub topic while the libp2p node is not running.")
+            return
+        }
+        if (!topic.length) {
+            error("A GossipSub topic is required.")
+            return
+        }
+        if (subscribedTopics.indexOf(topic) !== -1) {
+            error("Already subscribed to GossipSub topic '" + topic + "'.")
+            return
+        }
+
+        subscribedTopics = subscribedTopics.concat([topic])
+        gossipsubTopics = subscribedTopics.length
+        gossipsubTopicSubscribed(topic)
+    }
+
+    function gossipsubUnsubscribe(topic) {
+        topic = topic.trim()
+        if (status !== 2) {
+            error("Cannot unsubscribe from a GossipSub topic while the libp2p node is not running.")
+            return
+        }
+
+        var index = subscribedTopics.indexOf(topic)
+        if (index === -1) {
+            error("Not subscribed to GossipSub topic '" + topic + "'.")
+            return
+        }
+
+        var topics = subscribedTopics.slice()
+        topics.splice(index, 1)
+        subscribedTopics = topics
+        gossipsubTopics = topics.length
+        gossipsubTopicUnsubscribed(topic)
+    }
+
+    function gossipsubPublish(topic, message) {
+        topic = topic.trim()
+        if (status !== 2) {
+            error("Cannot publish a GossipSub message while the libp2p node is not running.")
+            return
+        }
+        if (!topic.length) {
+            error("A GossipSub topic is required.")
+            return
+        }
+        if (!message.trim().length) {
+            error("A GossipSub message is required.")
+            return
+        }
+
+        gossipsubMessagePublished(topic)
     }
 
     function refreshOverview() {

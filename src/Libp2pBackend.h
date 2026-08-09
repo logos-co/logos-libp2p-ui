@@ -21,6 +21,9 @@ class Libp2pBackend : public Libp2pBackendSimpleSource {
     void start() override;
     void stop() override;
     void refreshOverview() override;
+    void gossipsubSubscribe(QString topic) override;
+    void gossipsubUnsubscribe(QString topic) override;
+    void gossipsubPublish(QString topic, QString message) override;
     QString defaultConfigJson() override;
     void logDebugInfo() override;
 
@@ -31,6 +34,7 @@ class Libp2pBackend : public Libp2pBackendSimpleSource {
     bool ensureInitialized();
     QString firstListenAddress() const;
     int connectedPeerCount() const;
+    bool ensureRunning(const QString& operation);
     void clearRuntimeInfo();
 
     LogosAPI* m_logosAPI = nullptr;

@@ -112,7 +112,13 @@ Rectangle {
 
             Loader {
                 anchors.fill: parent
-                sourceComponent: root.selectedIndex === 0 ? overviewComponent : placeholderComponent
+                sourceComponent: {
+                    if (root.selectedIndex === 0)
+                        return overviewComponent
+                    if (root.selectedIndex === 3)
+                        return gossipsubComponent
+                    return placeholderComponent
+                }
             }
         }
     }
@@ -130,6 +136,14 @@ Rectangle {
 
         PlaceholderScreen {
             title: root.screens[root.selectedIndex].title
+        }
+    }
+
+    Component {
+        id: gossipsubComponent
+
+        GossipsubScreen {
+            backend: root.backend
         }
     }
 }

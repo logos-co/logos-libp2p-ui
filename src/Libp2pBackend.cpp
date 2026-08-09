@@ -22,6 +22,7 @@ Libp2pBackend::Libp2pBackend(LogosAPI* logosAPI, QObject* parent) : Libp2pBacken
     setConnectedPeers(0);
     setActiveStreams(0);
     setGossipsubTopics(0);
+    setSubscribedTopics(QVariantList{});
     setDhtRecords(0);
     setRelayReservations(0);
 
@@ -177,6 +178,7 @@ void Libp2pBackend::stop() {
 
     if (status() != Running && status() != Starting) {
         setStatus(Stopped);
+        clearRuntimeInfo();
         emit stopCompleted();
         return;
     }
@@ -190,7 +192,7 @@ void Libp2pBackend::stop() {
     }
 
     setStatus(Stopped);
-    setConnectedPeers(0);
+    clearRuntimeInfo();
     emit stopCompleted();
 }
 
@@ -228,12 +230,98 @@ int Libp2pBackend::connectedPeerCount() const {
     return count;
 }
 
+bool Libp2pBackend::ensureRunning(const QString& operation) {
+    if (status() == Running) {
+        return true;
+    }
+
+    reportError(QStringLiteral("Cannot %1 while the libp2p node is not running.").arg(operation));
+    return false;
+}
+
+void Libp2pBackend::gossipsubSubscribe(QString topic) {
+    topic = topic.trimmed();
+    if (!ensureRunning(QStringLiteral("subscribe to a GossipSub topic"))) {
+        return;
+    }
+    if (topic.isEmpty()) {
+        reportError(QStringLiteral("A GossipSub topic is required."));
+        return;
+    }
+    if (subscribedTopics().contains(topic)) {
+        reportError(QStringLiteral("Already subscribed to GossipSub topic '%1'.").arg(topic));
+        return;
+    }
+
+    LogosResult result = m_logos->libp2p_module.gossipsubSubscribe(topic);
+    if (!result.success) {
+        reportError(
+            QStringLiteral("Failed to subscribe to GossipSub topic '%1': %2").arg(topic, result.getError()));
+        return;
+    }
+
+    QVariantList topics = subscribedTopics();
+    topics.append(topic);
+    setSubscribedTopics(topics);
+    setGossipsubTopics(topics.size());
+    emit gossipsubTopicSubscribed(topic);
+}
+
+void Libp2pBackend::gossipsubUnsubscribe(QString topic) {
+    topic = topic.trimmed();
+    if (!ensureRunning(QStringLiteral("unsubscribe from a GossipSub topic"))) {
+        return;
+    }
+    if (topic.isEmpty() || !subscribedTopics().contains(topic)) {
+        reportError(QStringLiteral("Not subscribed to GossipSub topic '%1'.").arg(topic));
+        return;
+    }
+
+    LogosResult result = m_logos->libp2p_module.gossipsubUnsubscribe(topic);
+    if (!result.success) {
+        reportError(QStringLiteral("Failed to unsubscribe from GossipSub topic '%1': %2")
+                        .arg(topic, result.getError()));
+        return;
+    }
+
+    QVariantList topics = subscribedTopics();
+    topics.removeAll(topic);
+    setSubscribedTopics(topics);
+    setGossipsubTopics(topics.size());
+    emit gossipsubTopicUnsubscribed(topic);
+}
+
+void Libp2pBackend::gossipsubPublish(QString topic, QString message) {
+    topic = topic.trimmed();
+    if (!ensureRunning(QStringLiteral("publish a GossipSub message"))) {
+        return;
+    }
+    if (topic.isEmpty()) {
+        reportError(QStringLiteral("A GossipSub topic is required."));
+        return;
+    }
+    if (message.trimmed().isEmpty()) {
+        reportError(QStringLiteral("A GossipSub message is required."));
+        return;
+    }
+
+    LogosResult result = m_logos->libp2p_module.gossipsubPublish(topic, message);
+    if (!result.success) {
+        reportError(
+            QStringLiteral("Failed to publish to GossipSub topic '%1': %2").arg(topic, result.getError()));
+        return;
+    }
+
+    emit gossipsubMessagePublished(topic);
+}
+
 void Libp2pBackend::clearRuntimeInfo() {
     setPeerId(QString());
     setListenAddress(QString());
     setConnectedPeers(0);
     setActiveStreams(0);
     setGossipsubTopics(0);
+    setSubscribedTopics(QVariantList{});
     setDhtRecords(0);
     setRelayReservations(0);
 }
