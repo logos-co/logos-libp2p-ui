@@ -15,6 +15,14 @@ QtObject {
     property var subscribedTopics: []
     property int dhtRecords: 0
     property int relayReservations: 0
+    property var inboundPeers: []
+    property var outboundPeers: []
+    property int knownPeers: 0
+    property var metrics: ({})
+    property var lastPingResult: ({})
+    property var dhtLookupResults: []
+    property var advertisedServices: []
+    property var discoveryResults: []
 
     signal initCompleted(bool success, string error)
     signal startCompleted
@@ -24,6 +32,15 @@ QtObject {
     signal gossipsubTopicSubscribed(string topic)
     signal gossipsubTopicUnsubscribed(string topic)
     signal gossipsubMessagePublished(string topic)
+    signal peersUpdated
+    signal peerConnected(string peerId)
+    signal peerDisconnected(string peerId)
+    signal pingCompleted(var result)
+    signal dhtLookupCompleted(string peerId)
+    signal serviceAdvertised(string serviceId)
+    signal serviceStoppedAdvertising(string serviceId)
+    signal serviceLookupCompleted(string serviceId)
+    signal metricsUpdated(var metrics)
     signal error(string message)
 
     function init(configJson) {
@@ -35,7 +52,13 @@ QtObject {
         peerId = "16Uiu2HAmMockPeerIdForLogosNetworkConsole"
         listenAddress = "/ip4/127.0.0.1/tcp/39421"
         connectedPeers = 0
+        inboundPeers = []
+        outboundPeers = []
+        knownPeers = 0
+        metrics = defaultMetrics()
         startCompleted()
+        refreshPeers()
+        refreshMetrics()
         refreshOverview()
     }
 
@@ -44,6 +67,14 @@ QtObject {
         connectedPeers = 0
         gossipsubTopics = 0
         subscribedTopics = []
+        inboundPeers = []
+        outboundPeers = []
+        knownPeers = 0
+        metrics = ({})
+        lastPingResult = ({})
+        dhtLookupResults = []
+        advertisedServices = []
+        discoveryResults = []
         stopCompleted()
     }
 
@@ -103,6 +134,188 @@ QtObject {
         }
 
         gossipsubMessagePublished(topic)
+        refreshMetrics()
+    }
+
+    function defaultMetrics() {
+        return {
+            "connectedPeersMetric": connectedPeers,
+            "openStreams": activeStreams,
+            "openInboundStreams": 0,
+            "openOutboundStreams": activeStreams,
+            "streamCapRejections": 0,
+            "gossipsubPublished": 0,
+            "gossipsubReceived": 0,
+            "dhtRoutingPeers": 0,
+            "dhtRoutingBuckets": 0,
+            "dhtNetworkSizeEstimate": 0,
+            "discoveryAdvertisements": advertisedServices.length,
+            "discoveryServices": advertisedServices.length,
+            "discoveryServicePeers": 0,
+            "discoveryLookupRequests": 0,
+            "discoveryPeersFound": 0
+        }
+    }
+
+    function refreshPeers() {
+        if (status !== 2) {
+            inboundPeers = []
+            outboundPeers = []
+            knownPeers = 0
+            connectedPeers = 0
+        }
+        peersUpdated()
+    }
+
+    function connectPeer(peerId, multiaddr) {
+        peerId = peerId.trim()
+        multiaddr = multiaddr.trim()
+        if (status !== 2) {
+            error("Cannot connect to a peer while the libp2p node is not running.")
+            return
+        }
+        if (!peerId.length || !multiaddr.length) {
+            error("A peer ID and multiaddress are required to connect.")
+            return
+        }
+        if (outboundPeers.indexOf(peerId) !== -1) {
+            error("Already connected to peer '" + peerId + "'.")
+            return
+        }
+        outboundPeers = outboundPeers.concat([peerId])
+        knownPeers = Math.max(knownPeers, outboundPeers.length + inboundPeers.length)
+        connectedPeers = inboundPeers.length + outboundPeers.length
+        refreshMetrics()
+        peerConnected(peerId)
+    }
+
+    function disconnectPeer(peerId) {
+        peerId = peerId.trim()
+        if (status !== 2) {
+            error("Cannot disconnect a peer while the libp2p node is not running.")
+            return
+        }
+        var inboundIndex = inboundPeers.indexOf(peerId)
+        var outboundIndex = outboundPeers.indexOf(peerId)
+        if (inboundIndex === -1 && outboundIndex === -1) {
+            error("Not connected to peer '" + peerId + "'.")
+            return
+        }
+        if (inboundIndex !== -1) {
+            var inbound = inboundPeers.slice()
+            inbound.splice(inboundIndex, 1)
+            inboundPeers = inbound
+        }
+        if (outboundIndex !== -1) {
+            var outbound = outboundPeers.slice()
+            outbound.splice(outboundIndex, 1)
+            outboundPeers = outbound
+        }
+        connectedPeers = inboundPeers.length + outboundPeers.length
+        refreshMetrics()
+        peerDisconnected(peerId)
+    }
+
+    function refreshMetrics() {
+        var values = defaultMetrics()
+        values.connectedPeersMetric = connectedPeers
+        metrics = values
+        metricsUpdated(values)
+    }
+
+    function pingPeer(peerId) {
+        peerId = peerId.trim()
+        if (status !== 2) {
+            error("Cannot ping a peer while the libp2p node is not running.")
+            return
+        }
+        if (inboundPeers.indexOf(peerId) === -1 && outboundPeers.indexOf(peerId) === -1) {
+            error("Connect to peer '" + peerId + "' before pinging it.")
+            return
+        }
+        lastPingResult = { "peerId": peerId, "latencyMs": 12, "success": true }
+        pingCompleted(lastPingResult)
+    }
+
+    function dhtFindPeer(peerId) {
+        peerId = peerId.trim()
+        if (status !== 2) {
+            error("Cannot look up a DHT peer while the libp2p node is not running.")
+            return
+        }
+        if (!peerId.length) {
+            error("A peer ID is required for DHT lookup.")
+            return
+        }
+        dhtLookupResults = inboundPeers.concat(outboundPeers)
+        dhtLookupCompleted(peerId)
+    }
+
+    function serviceDiscoveryAdvertise(serviceId, serviceData) {
+        serviceId = serviceId.trim()
+        if (status !== 2) {
+            error("Cannot advertise a service while the libp2p node is not running.")
+            return
+        }
+        if (!serviceId.length) {
+            error("A service ID is required to advertise.")
+            return
+        }
+        for (var i = 0; i < advertisedServices.length; ++i) {
+            if (advertisedServices[i].serviceId === serviceId) {
+                error("Already advertising service '" + serviceId + "'. Stop it before advertising it again.")
+                return
+            }
+        }
+        advertisedServices = advertisedServices.concat([{ "serviceId": serviceId, "serviceData": serviceData }])
+        refreshMetrics()
+        serviceAdvertised(serviceId)
+    }
+
+    function serviceDiscoveryStopAdvertising(serviceId) {
+        serviceId = serviceId.trim()
+        if (status !== 2) {
+            error("Cannot stop advertising a service while the libp2p node is not running.")
+            return
+        }
+        var services = advertisedServices.slice()
+        for (var i = services.length - 1; i >= 0; --i) {
+            if (services[i].serviceId === serviceId)
+                services.splice(i, 1)
+        }
+        advertisedServices = services
+        refreshMetrics()
+        serviceStoppedAdvertising(serviceId)
+    }
+
+    function serviceDiscoveryLookup(serviceId, serviceData) {
+        serviceId = serviceId.trim()
+        if (status !== 2) {
+            error("Cannot look up a service while the libp2p node is not running.")
+            return
+        }
+        if (!serviceId.length) {
+            error("A service ID is required for service discovery lookup.")
+            return
+        }
+        var matches = []
+        for (var i = 0; i < advertisedServices.length; ++i) {
+            var service = advertisedServices[i]
+            if (service.serviceId === serviceId && service.serviceData === serviceData) {
+                matches.push({
+                                 "peerId": peerId,
+                                 "addrs": [listenAddress],
+                                 "services": [{ "id": service.serviceId, "data": service.serviceData }]
+                             })
+            }
+        }
+        discoveryResults = matches
+        var values = defaultMetrics()
+        values.discoveryLookupRequests = metrics.discoveryLookupRequests + 1
+        values.discoveryPeersFound = metrics.discoveryPeersFound + matches.length
+        metrics = values
+        metricsUpdated(values)
+        serviceLookupCompleted(serviceId)
     }
 
     function refreshOverview() {

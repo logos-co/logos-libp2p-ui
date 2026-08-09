@@ -28,7 +28,12 @@ qt_add_qml_module(appqml
         Libp2pConsoleLayout.qml
         SidebarItem.qml
         OverviewScreen.qml
+        PeersScreen.qml
+        StreamsScreen.qml
         GossipsubScreen.qml
+        DhtScreen.qml
+        ServiceDiscoveryScreen.qml
+        SettingsScreen.qml
         CopyField.qml
         StatCard.qml
         PlaceholderScreen.qml
