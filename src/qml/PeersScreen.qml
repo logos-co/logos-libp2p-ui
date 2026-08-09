@@ -27,9 +27,9 @@ Item {
     Component.onCompleted: refresh()
 
     Timer {
-        interval: 5000
+        interval: root.backend && root.backend.metricsRefreshIntervalMs > 0 ? root.backend.metricsRefreshIntervalMs : 5000
         repeat: true
-        running: root.visible && root.running
+        running: root.visible && root.running && root.backend.metricsRefreshIntervalMs > 0
         onTriggered: root.refresh()
     }
 

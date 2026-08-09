@@ -155,5 +155,5 @@ Rectangle {
 
     Component { id: serviceDiscoveryComponent; ServiceDiscoveryScreen { backend: root.backend } }
 
-    Component { id: settingsComponent; SettingsScreen {} }
+    Component { id: settingsComponent; SettingsScreen { backend: root.backend } }
 }

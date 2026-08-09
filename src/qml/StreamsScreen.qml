@@ -16,7 +16,12 @@ Item {
     function refresh() { if (backend) backend.refreshMetrics() }
     Component.onCompleted: refresh()
 
-    Timer { interval: 5000; repeat: true; running: root.visible && root.running; onTriggered: root.refresh() }
+    Timer {
+        interval: root.backend && root.backend.metricsRefreshIntervalMs > 0 ? root.backend.metricsRefreshIntervalMs : 5000
+        repeat: true
+        running: root.visible && root.running && root.backend.metricsRefreshIntervalMs > 0
+        onTriggered: root.refresh()
+    }
 
     LogosScrollView {
         id: scroll
