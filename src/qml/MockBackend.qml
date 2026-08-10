@@ -23,6 +23,10 @@ QtObject {
     property var dhtLookupResults: []
     property var advertisedServices: []
     property var discoveryResults: []
+    property var nodeConfig: defaultNodeConfig()
+    readonly property string nodeConfigJson: JSON.stringify(nodeConfig, null, 2)
+    readonly property bool settingsEditable: status === 0
+    property int metricsRefreshIntervalMs: 5000
 
     signal initCompleted(bool success, string error)
     signal startCompleted
@@ -41,10 +45,20 @@ QtObject {
     signal serviceStoppedAdvertising(string serviceId)
     signal serviceLookupCompleted(string serviceId)
     signal metricsUpdated(var metrics)
+    signal nodeConfigApplied
+    signal nodeConfigRestored
+    signal metricsRefreshIntervalChanged(int intervalMs)
     signal error(string message)
 
     function init(configJson) {
-        initCompleted(true, "")
+        try {
+            var config = JSON.parse(configJson)
+            nodeConfig = canonicalNodeConfig(config)
+            initCompleted(true, "")
+        } catch (exception) {
+            error("Invalid libp2p configuration: " + exception)
+            initCompleted(false, "Invalid libp2p configuration")
+        }
     }
 
     function start() {
@@ -331,17 +345,66 @@ QtObject {
     }
 
     function defaultConfigJson() {
-        return JSON.stringify({
-                                  "addrs": ["/ip4/127.0.0.1/tcp/0"],
-                                  "transport": "tcp",
-                                  "maxConnections": 50,
-                                  "maxInConnections": 25,
-                                  "maxOutConnections": 25,
-                                  "maxConnsPerPeer": 1,
-                                  "mountGossipsub": true,
-                                  "mountKad": true,
-                                  "mountServiceDiscovery": true
-                              })
+        return JSON.stringify(defaultNodeConfig(), null, 2)
+    }
+
+    function defaultNodeConfig() {
+        return {
+            "addrs": ["/ip4/127.0.0.1/tcp/0"],
+            "transport": "tcp",
+            "maxConnections": 50,
+            "maxInConnections": 25,
+            "maxOutConnections": 25,
+            "maxConnsPerPeer": 1,
+            "mountGossipsub": true,
+            "mountKad": true,
+            "mountServiceDiscovery": true,
+            "bootstrapNodes": [],
+            "autonat": false,
+            "autonatV2": false,
+            "autonatV2Server": false,
+            "circuitRelay": false,
+            "circuitRelayClient": false,
+            "gossipsubTriggerSelf": true
+        }
+    }
+
+    function canonicalNodeConfig(config) {
+        var defaults = defaultNodeConfig()
+        for (var key in config)
+            defaults[key] = config[key]
+        return defaults
+    }
+
+    function applyNodeConfig(config) {
+        if (!settingsEditable) {
+            error("Stop the libp2p node before changing its configuration.")
+            return
+        }
+        if (!config.addrs || config.addrs.length === 0 || config.transport !== "tcp" && config.transport !== "quic") {
+            error("Enter at least one listen address and select TCP or QUIC.")
+            return
+        }
+        nodeConfig = canonicalNodeConfig(config)
+        nodeConfigApplied()
+    }
+
+    function restoreDefaultNodeConfig() {
+        if (!settingsEditable) {
+            error("Stop the libp2p node before changing its configuration.")
+            return
+        }
+        nodeConfig = defaultNodeConfig()
+        nodeConfigRestored()
+    }
+
+    function setMetricsRefreshInterval(intervalMs) {
+        if ([0, 5000, 10000, 30000].indexOf(intervalMs) === -1) {
+            error("Metrics refresh interval must be Off, 5, 10, or 30 seconds.")
+            return
+        }
+        metricsRefreshIntervalMs = intervalMs
+        metricsRefreshIntervalChanged(intervalMs)
     }
 
     function logDebugInfo() {}

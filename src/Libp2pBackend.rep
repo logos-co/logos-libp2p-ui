@@ -28,6 +28,10 @@ class Libp2pBackend
     PROP(QVariantList dhtLookupResults READONLY)
     PROP(QVariantList advertisedServices READONLY)
     PROP(QVariantList discoveryResults READONLY)
+    PROP(QVariantMap nodeConfig READONLY)
+    PROP(QString nodeConfigJson READONLY)
+    PROP(bool settingsEditable READONLY)
+    PROP(int metricsRefreshIntervalMs READONLY)
 
     SLOT(void init(QString configJson))
     SLOT(void start())
@@ -45,6 +49,9 @@ class Libp2pBackend
     SLOT(void serviceDiscoveryAdvertise(QString serviceId, QString serviceData))
     SLOT(void serviceDiscoveryStopAdvertising(QString serviceId))
     SLOT(void serviceDiscoveryLookup(QString serviceId, QString serviceData))
+    SLOT(void applyNodeConfig(QVariantMap config))
+    SLOT(void restoreDefaultNodeConfig())
+    SLOT(void setMetricsRefreshInterval(int intervalMs))
     SLOT(QString defaultConfigJson())
     SLOT(void logDebugInfo())
 
@@ -65,5 +72,8 @@ class Libp2pBackend
     SIGNAL(serviceStoppedAdvertising(QString serviceId))
     SIGNAL(serviceLookupCompleted(QString serviceId))
     SIGNAL(metricsUpdated(QVariantMap metrics))
+    SIGNAL(nodeConfigApplied())
+    SIGNAL(nodeConfigRestored())
+    SIGNAL(metricsRefreshIntervalChanged(int intervalMs))
     SIGNAL(error(QString message))
 }

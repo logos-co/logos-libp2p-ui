@@ -7,6 +7,7 @@ Item {
     id: root
     property var backend: MockBackend
     readonly property bool running: backend && backend.status === 2
+    readonly property bool featureEnabled: !backend || !backend.nodeConfig || backend.nodeConfig.mountServiceDiscovery !== false
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     readonly property var advertisedServices: backend && backend.advertisedServices !== undefined ? backend.advertisedServices : []
     readonly property var results: backend && backend.discoveryResults !== undefined ? backend.discoveryResults : []
@@ -15,7 +16,12 @@ Item {
     function metric(name) { return metrics[name] === undefined ? 0 : metrics[name] }
     function refresh() { if (backend) backend.refreshMetrics() }
     Component.onCompleted: refresh()
-    Timer { interval: 5000; repeat: true; running: root.visible && root.running; onTriggered: root.refresh() }
+    Timer {
+        interval: root.backend && root.backend.metricsRefreshIntervalMs > 0 ? root.backend.metricsRefreshIntervalMs : 5000
+        repeat: true
+        running: root.visible && root.running && root.featureEnabled && root.backend.metricsRefreshIntervalMs > 0
+        onTriggered: root.refresh()
+    }
 
     LogosScrollView {
         id: scroll
@@ -29,9 +35,10 @@ Item {
                 Layout.fillWidth: true
                 LogosText { text: "Service Discovery"; font.pixelSize: Theme.typography.titleText; color: Theme.palette.text }
                 Item { Layout.fillWidth: true }
-                LogosButton { text: "Refresh"; enabled: root.running; onClicked: root.refresh() }
+                LogosButton { text: "Refresh"; enabled: root.running && root.featureEnabled; onClicked: root.refresh() }
             }
             LogosText { Layout.fillWidth: true; visible: !root.running; text: "Start the node from Overview to advertise and discover services."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.warning; wrapMode: Text.Wrap }
+            LogosText { Layout.fillWidth: true; visible: root.running && !root.featureEnabled; text: "Service Discovery is disabled in Settings. Stop the node, enable it, then apply the configuration."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.warning; wrapMode: Text.Wrap }
             LogosText { Layout.fillWidth: true; visible: root.successMessage.length > 0; text: root.successMessage; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.success; wrapMode: Text.Wrap }
             GridLayout {
                 Layout.fillWidth: true
@@ -54,13 +61,13 @@ Item {
                     anchors.fill: parent
                     spacing: Theme.spacing.medium
                     LogosText { text: "Advertise service"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
-                    LogosTextField { id: advertiseId; Layout.fillWidth: true; enabled: root.running; placeholderText: "Service ID"; onTextChanged: root.successMessage = "" }
+                    LogosTextField { id: advertiseId; Layout.fillWidth: true; enabled: root.running && root.featureEnabled; placeholderText: "Service ID"; onTextChanged: root.successMessage = "" }
                     RowLayout {
                         Layout.fillWidth: true
-                        LogosTextField { id: advertiseData; Layout.fillWidth: true; enabled: root.running; placeholderText: "Service data (may be empty)"; onTextChanged: root.successMessage = "" }
-                        LogosButton { text: "Advertise"; variant: LogosButton.Variant.Primary; enabled: root.running && advertiseId.text.trim().length > 0; onClicked: root.backend.serviceDiscoveryAdvertise(advertiseId.text, advertiseData.text) }
+                        LogosTextField { id: advertiseData; Layout.fillWidth: true; enabled: root.running && root.featureEnabled; placeholderText: "Service data (may be empty)"; onTextChanged: root.successMessage = "" }
+                        LogosButton { text: "Advertise"; variant: LogosButton.Variant.Primary; enabled: root.running && root.featureEnabled && advertiseId.text.trim().length > 0; onClicked: root.backend.serviceDiscoveryAdvertise(advertiseId.text, advertiseData.text) }
                     }
-                    LogosText { Layout.fillWidth: true; visible: root.advertisedServices.length === 0; text: root.running ? "No local services are being advertised." : "No services are available while the node is stopped."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textTertiary; wrapMode: Text.Wrap }
+                    LogosText { Layout.fillWidth: true; visible: root.advertisedServices.length === 0; text: !root.running ? "No services are available while the node is stopped." : !root.featureEnabled ? "Service Discovery is disabled in Settings." : "No local services are being advertised."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textTertiary; wrapMode: Text.Wrap }
                     Repeater {
                         model: root.advertisedServices
                         Rectangle {
@@ -73,7 +80,7 @@ Item {
                                     LogosText { Layout.fillWidth: true; text: modelData.serviceId; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.text; elide: Text.ElideRight }
                                     LogosText { Layout.fillWidth: true; visible: modelData.serviceData.length > 0; text: modelData.serviceData; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textTertiary; elide: Text.ElideRight }
                                 }
-                                LogosButton { text: "Stop"; enabled: root.running; onClicked: root.backend.serviceDiscoveryStopAdvertising(modelData.serviceId) }
+                                LogosButton { text: "Stop"; enabled: root.running && root.featureEnabled; onClicked: root.backend.serviceDiscoveryStopAdvertising(modelData.serviceId) }
                             }
                         }
                     }
@@ -90,13 +97,13 @@ Item {
                     spacing: Theme.spacing.medium
                     LogosText { text: "Lookup service"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
                     LogosText { Layout.fillWidth: true; text: "Service data is matched exactly; leave it empty to find advertisements with empty data."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textSecondary; wrapMode: Text.Wrap }
-                    LogosTextField { id: lookupId; Layout.fillWidth: true; enabled: root.running; placeholderText: "Service ID"; onTextChanged: root.successMessage = "" }
+                    LogosTextField { id: lookupId; Layout.fillWidth: true; enabled: root.running && root.featureEnabled; placeholderText: "Service ID"; onTextChanged: root.successMessage = "" }
                     RowLayout {
                         Layout.fillWidth: true
-                        LogosTextField { id: lookupData; Layout.fillWidth: true; enabled: root.running; placeholderText: "Service data (may be empty)"; onTextChanged: root.successMessage = "" }
-                        LogosButton { text: "Lookup"; variant: LogosButton.Variant.Primary; enabled: root.running && lookupId.text.trim().length > 0; onClicked: root.backend.serviceDiscoveryLookup(lookupId.text, lookupData.text) }
+                        LogosTextField { id: lookupData; Layout.fillWidth: true; enabled: root.running && root.featureEnabled; placeholderText: "Service data (may be empty)"; onTextChanged: root.successMessage = "" }
+                        LogosButton { text: "Lookup"; variant: LogosButton.Variant.Primary; enabled: root.running && root.featureEnabled && lookupId.text.trim().length > 0; onClicked: root.backend.serviceDiscoveryLookup(lookupId.text, lookupData.text) }
                     }
-                    LogosText { Layout.fillWidth: true; visible: root.results.length === 0; text: root.running ? "No matching service records found yet." : "No results are available while the node is stopped."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textTertiary; wrapMode: Text.Wrap }
+                    LogosText { Layout.fillWidth: true; visible: root.results.length === 0; text: !root.running ? "No results are available while the node is stopped." : !root.featureEnabled ? "Service Discovery is disabled in Settings." : "No matching service records found yet."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textTertiary; wrapMode: Text.Wrap }
                     Repeater {
                         model: root.results
                         LogosFrame {

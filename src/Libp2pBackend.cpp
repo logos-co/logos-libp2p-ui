@@ -5,8 +5,12 @@
 #include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonValue>
+#include <QSet>
 #include <QStringList>
 #include <QVariantMap>
+
+#include <cmath>
 
 #ifndef LIBP2P_UI_VERSION
 #define LIBP2P_UI_VERSION "unknown"
@@ -15,6 +19,37 @@
 namespace {
 constexpr int kInboundDirection = 0;
 constexpr int kOutboundDirection = 1;
+constexpr int kDefaultMetricsRefreshIntervalMs = 5000;
+
+const QString kConfigSettingsKey = QStringLiteral("libp2p-ui/nodeConfig");
+const QString kMetricsIntervalSettingsKey = QStringLiteral("libp2p-ui/metricsRefreshIntervalMs");
+
+bool normalizeStringArray(const QJsonValue& value, QJsonArray* output, const QString& field, QString* error) {
+    if (!value.isArray()) {
+        *error = QStringLiteral("%1 must be an array of strings.").arg(field);
+        return false;
+    }
+
+    QJsonArray normalized;
+    for (const QJsonValue& item : value.toArray()) {
+        const QString text = item.toString().trimmed();
+        if (!item.isString() || text.isEmpty()) {
+            *error = QStringLiteral("%1 must contain only non-empty strings.").arg(field);
+            return false;
+        }
+        normalized.append(text);
+    }
+    *output = normalized;
+    return true;
+}
+
+bool isAllowedMetricsRefreshInterval(int intervalMs) {
+    return intervalMs == 0 || intervalMs == 5000 || intervalMs == 10000 || intervalMs == 30000;
+}
+
+QJsonValue valueOrDefault(const QJsonObject& object, const QString& key, const QJsonObject& defaults) {
+    return object.contains(key) ? object.value(key) : defaults.value(key);
+}
 } // namespace
 
 Libp2pBackend::Libp2pBackend(LogosAPI* logosAPI, QObject* parent) : Libp2pBackendSimpleSource(parent) {
@@ -36,8 +71,13 @@ Libp2pBackend::Libp2pBackend(LogosAPI* logosAPI, QObject* parent) : Libp2pBacken
     setDhtLookupResults(QVariantList{});
     setAdvertisedServices(QVariantList{});
     setDiscoveryResults(QVariantList{});
+    setNodeConfig(QVariantMap{});
+    setNodeConfigJson(QString());
+    setSettingsEditable(true);
+    setMetricsRefreshIntervalMs(kDefaultMetricsRefreshIntervalMs);
 
     m_config = defaultConfig();
+    loadSettings();
 
     if (logosAPI) {
         m_logosAPI = logosAPI;
@@ -69,11 +109,153 @@ QJsonDocument Libp2pBackend::defaultConfig() {
     obj["mountGossipsub"] = true;
     obj["mountKad"] = true;
     obj["mountServiceDiscovery"] = true;
+    obj["bootstrapNodes"] = QJsonArray{};
+    obj["autonat"] = false;
+    obj["autonatV2"] = false;
+    obj["autonatV2Server"] = false;
+    obj["circuitRelay"] = false;
+    obj["circuitRelayClient"] = false;
+    obj["gossipsubTriggerSelf"] = true;
     return QJsonDocument(obj);
 }
 
 QString Libp2pBackend::defaultConfigJson() {
     return QString::fromUtf8(defaultConfig().toJson(QJsonDocument::Indented));
+}
+
+bool Libp2pBackend::canonicalizeConfig(const QVariantMap& input, QJsonDocument* config, QString* error) {
+    return canonicalizeConfig(QJsonDocument(QJsonObject::fromVariantMap(input)), config, error);
+}
+
+bool Libp2pBackend::canonicalizeConfig(const QJsonDocument& input, QJsonDocument* config, QString* error) {
+    if (!input.isObject()) {
+        *error = QStringLiteral("Configuration must be a JSON object.");
+        return false;
+    }
+
+    const QJsonObject source = input.object();
+    QJsonObject normalized = defaultConfig().object();
+
+    QJsonArray addrs = normalized.value(QStringLiteral("addrs")).toArray();
+    if (source.contains(QStringLiteral("addrs"))
+        && !normalizeStringArray(source.value(QStringLiteral("addrs")), &addrs, QStringLiteral("addrs"), error)) {
+            return false;
+    }
+    if (addrs.isEmpty()) {
+        *error = QStringLiteral("At least one listen multiaddress is required.");
+        return false;
+    }
+    normalized["addrs"] = addrs;
+
+    const QString transport = valueOrDefault(source, QStringLiteral("transport"), normalized).toString().trimmed();
+    if (transport != QStringLiteral("tcp") && transport != QStringLiteral("quic")) {
+        *error = QStringLiteral("transport must be either 'tcp' or 'quic'.");
+        return false;
+    }
+    normalized["transport"] = transport;
+
+    const QStringList limitKeys{
+        QStringLiteral("maxConnections"),
+        QStringLiteral("maxInConnections"),
+        QStringLiteral("maxOutConnections"),
+        QStringLiteral("maxConnsPerPeer")};
+    for (const QString& key : limitKeys) {
+        const QJsonValue value = valueOrDefault(source, key, normalized);
+        if (!value.isDouble() || std::floor(value.toDouble()) != value.toDouble() || value.toInt() < 1) {
+            *error = QStringLiteral("%1 must be an integer of at least one.").arg(key);
+            return false;
+        }
+        normalized[key] = value.toInt();
+    }
+
+    const QStringList boolKeys{
+        QStringLiteral("mountGossipsub"),
+        QStringLiteral("mountKad"),
+        QStringLiteral("mountServiceDiscovery"),
+        QStringLiteral("gossipsubTriggerSelf"),
+        QStringLiteral("autonat"),
+        QStringLiteral("autonatV2"),
+        QStringLiteral("autonatV2Server"),
+        QStringLiteral("circuitRelay"),
+        QStringLiteral("circuitRelayClient")};
+    for (const QString& key : boolKeys) {
+        const QJsonValue value = valueOrDefault(source, key, normalized);
+        if (!value.isBool()) {
+            *error = QStringLiteral("%1 must be true or false.").arg(key);
+            return false;
+        }
+        normalized[key] = value.toBool();
+    }
+
+    const QJsonValue bootstrapValue = valueOrDefault(source, QStringLiteral("bootstrapNodes"), normalized);
+    if (!bootstrapValue.isArray()) {
+        *error = QStringLiteral("bootstrapNodes must be an array.");
+        return false;
+    }
+    QJsonArray bootstrapNodes;
+    QSet<QString> peerIds;
+    for (const QJsonValue& entry : bootstrapValue.toArray()) {
+        if (!entry.isObject()) {
+            *error = QStringLiteral("Each bootstrap node must be an object.");
+            return false;
+        }
+        const QJsonObject node = entry.toObject();
+        const QString peerId = node.value(QStringLiteral("peerId")).toString().trimmed();
+        if (peerId.isEmpty()) {
+            *error = QStringLiteral("Each bootstrap node needs a peer ID.");
+            return false;
+        }
+        if (peerIds.contains(peerId)) {
+            *error = QStringLiteral("Bootstrap peer IDs must be unique.");
+            return false;
+        }
+        QJsonArray nodeAddrs;
+        if (!normalizeStringArray(node.value(QStringLiteral("addrs")), &nodeAddrs,
+                                  QStringLiteral("Bootstrap node addresses"), error)
+            || nodeAddrs.isEmpty()) {
+            if (nodeAddrs.isEmpty() && error->isEmpty()) {
+                *error = QStringLiteral("Each bootstrap node needs an address.");
+            }
+            return false;
+        }
+        peerIds.insert(peerId);
+        bootstrapNodes.append(QJsonObject{{"peerId", peerId}, {"addrs", nodeAddrs}});
+    }
+    normalized["bootstrapNodes"] = bootstrapNodes;
+
+    *config = QJsonDocument(normalized);
+    return true;
+}
+
+void Libp2pBackend::setCurrentConfig(const QJsonDocument& config) {
+    m_config = config;
+    setNodeConfig(m_config.object().toVariantMap());
+    setNodeConfigJson(QString::fromUtf8(m_config.toJson(QJsonDocument::Indented)));
+}
+
+void Libp2pBackend::persistConfig() {
+    m_settings.setValue(kConfigSettingsKey, QString::fromUtf8(m_config.toJson(QJsonDocument::Compact)));
+    m_settings.sync();
+}
+
+void Libp2pBackend::loadSettings() {
+    QJsonDocument config = defaultConfig();
+    const QString storedConfig = m_settings.value(kConfigSettingsKey).toString();
+    if (!storedConfig.isEmpty()) {
+        QJsonParseError parseError;
+        const QJsonDocument parsed = QJsonDocument::fromJson(storedConfig.toUtf8(), &parseError);
+        QJsonDocument normalized;
+        QString error;
+        if (parseError.error == QJsonParseError::NoError && canonicalizeConfig(parsed, &normalized, &error)) {
+            config = normalized;
+        } else {
+            qWarning() << "Libp2pBackend: ignoring invalid persisted configuration:" << error;
+        }
+    }
+    setCurrentConfig(config);
+
+    const int intervalMs = m_settings.value(kMetricsIntervalSettingsKey, kDefaultMetricsRefreshIntervalMs).toInt();
+    setMetricsRefreshIntervalMs(isAllowedMetricsRefreshInterval(intervalMs) ? intervalMs : kDefaultMetricsRefreshIntervalMs);
 }
 
 void Libp2pBackend::init(QString configJson) {
@@ -85,41 +267,52 @@ void Libp2pBackend::init(QString configJson) {
     }
 
     QJsonParseError parseError;
-    QJsonDocument config = QJsonDocument::fromJson(configJson.toUtf8(), &parseError);
-    if (!config.isObject()) {
+    const QJsonDocument parsed = QJsonDocument::fromJson(configJson.toUtf8(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !parsed.isObject()) {
         const QString message = QStringLiteral("Invalid libp2p configuration: %1").arg(parseError.errorString());
         reportError(message);
         emit initCompleted(false, message);
         return;
     }
 
-    if (m_initialized && config == m_config) {
-        emit initCompleted(true, QString());
+    QJsonDocument config;
+    QString error;
+    if (!canonicalizeConfig(parsed, &config, &error) || !initializeConfig(config, false, &error)) {
+        reportError(error);
+        emit initCompleted(false, error);
         return;
     }
-
-    if (m_initialized) {
-        const QString message =
-            QStringLiteral("libp2p node is already initialized. Restart the UI to apply a different config.");
-        reportError(message);
-        emit initCompleted(false, message);
-        return;
-    }
-
-    const QString compactConfig = QString::fromUtf8(config.toJson(QJsonDocument::Compact));
-    LogosResult result = m_logos->libp2p_module.createNode(compactConfig);
-    if (!result.success) {
-        const QString message = QStringLiteral("Failed to initialize libp2p node: %1").arg(result.getError());
-        reportError(message);
-        emit initCompleted(false, message);
-        return;
-    }
-
-    m_config = config;
-    m_initialized = true;
-    setStatus(Stopped);
-    clearRuntimeInfo();
     emit initCompleted(true, QString());
+}
+
+bool Libp2pBackend::initializeConfig(const QJsonDocument& config, bool persist, QString* error) {
+    if (status() != Stopped) {
+        *error = QStringLiteral("Stop the libp2p node before changing its configuration.");
+        return false;
+    }
+    if (m_initialized && config == m_config) {
+        setCurrentConfig(config);
+        if (persist) {
+            persistConfig();
+        }
+        return true;
+    }
+
+    LogosResult result = m_logos->libp2p_module.createNode(QString::fromUtf8(config.toJson(QJsonDocument::Compact)));
+    if (!result.success) {
+        *error = QStringLiteral("Failed to initialize libp2p node: %1").arg(result.getError());
+        return false;
+    }
+
+    setCurrentConfig(config);
+    m_initialized = true;
+    m_serviceDiscoveryStarted = false;
+    clearRuntimeInfo();
+    setSettingsEditable(true);
+    if (persist) {
+        persistConfig();
+    }
+    return true;
 }
 
 bool Libp2pBackend::ensureInitialized() {
@@ -138,7 +331,7 @@ bool Libp2pBackend::ensureInitialized() {
             err = error;
         });
 
-    init(defaultConfigJson());
+    init(nodeConfigJson());
     disconnect(connection);
 
     if (!completed || !ok) {
@@ -168,9 +361,11 @@ void Libp2pBackend::start() {
     }
 
     setStatus(Starting);
+    setSettingsEditable(false);
     LogosResult result = m_logos->libp2p_module.start();
     if (!result.success) {
         setStatus(Stopped);
+        setSettingsEditable(true);
         const QString message = QStringLiteral("Failed to start libp2p node: %1").arg(result.getError());
         reportError(message);
         emit startFailed(message);
@@ -178,6 +373,7 @@ void Libp2pBackend::start() {
     }
 
     setStatus(Running);
+    setSettingsEditable(false);
     refreshPeers();
     refreshMetrics();
     refreshOverview();
@@ -191,12 +387,14 @@ void Libp2pBackend::stop() {
 
     if (status() != Running && status() != Starting) {
         setStatus(Stopped);
+        setSettingsEditable(true);
         clearRuntimeInfo();
         emit stopCompleted();
         return;
     }
 
     setStatus(Stopping);
+    setSettingsEditable(false);
     if (m_serviceDiscoveryStarted) {
         LogosResult discoveryResult = m_logos->libp2p_module.discoStop();
         if (!discoveryResult.success) {
@@ -207,11 +405,13 @@ void Libp2pBackend::stop() {
     LogosResult result = m_logos->libp2p_module.stop();
     if (!result.success) {
         setStatus(Running);
+        setSettingsEditable(false);
         reportError(QStringLiteral("Failed to stop libp2p node: %1").arg(result.getError()));
         return;
     }
 
     setStatus(Stopped);
+    setSettingsEditable(true);
     clearRuntimeInfo();
     emit stopCompleted();
 }
@@ -667,6 +867,43 @@ void Libp2pBackend::serviceDiscoveryLookup(QString serviceId, QString serviceDat
     setDiscoveryResults(records);
     refreshMetrics();
     emit serviceLookupCompleted(serviceId);
+}
+
+void Libp2pBackend::applyNodeConfig(QVariantMap config) {
+    QJsonDocument normalized;
+    QString error;
+    if (!canonicalizeConfig(config, &normalized, &error)) {
+        reportError(QStringLiteral("Invalid node configuration: %1").arg(error));
+        return;
+    }
+    if (!initializeConfig(normalized, true, &error)) {
+        reportError(error);
+        return;
+    }
+    emit nodeConfigApplied();
+}
+
+void Libp2pBackend::restoreDefaultNodeConfig() {
+    QString error;
+    if (!initializeConfig(defaultConfig(), true, &error)) {
+        reportError(error);
+        return;
+    }
+    emit nodeConfigRestored();
+}
+
+void Libp2pBackend::setMetricsRefreshInterval(int intervalMs) {
+    if (!isAllowedMetricsRefreshInterval(intervalMs)) {
+        reportError(QStringLiteral("Metrics refresh interval must be Off, 5, 10, or 30 seconds."));
+        return;
+    }
+    if (metricsRefreshIntervalMs() == intervalMs) {
+        return;
+    }
+    setMetricsRefreshIntervalMs(intervalMs);
+    m_settings.setValue(kMetricsIntervalSettingsKey, intervalMs);
+    m_settings.sync();
+    emit metricsRefreshIntervalChanged(intervalMs);
 }
 
 void Libp2pBackend::clearRuntimeInfo() {

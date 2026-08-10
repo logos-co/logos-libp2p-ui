@@ -8,6 +8,7 @@ Item {
 
     property var backend: MockBackend
     readonly property bool running: backend && backend.status === 2
+    readonly property bool featureEnabled: !backend || !backend.nodeConfig || backend.nodeConfig.mountKad !== false
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     readonly property var results: backend && backend.dhtLookupResults !== undefined ? backend.dhtLookupResults : []
     property string successMessage: ""
@@ -24,9 +25,9 @@ Item {
     Component.onCompleted: refresh()
 
     Timer {
-        interval: 5000
+        interval: root.backend && root.backend.metricsRefreshIntervalMs > 0 ? root.backend.metricsRefreshIntervalMs : 5000
         repeat: true
-        running: root.visible && root.running
+        running: root.visible && root.running && root.featureEnabled && root.backend.metricsRefreshIntervalMs > 0
         onTriggered: root.refresh()
     }
 
@@ -55,7 +56,7 @@ Item {
 
                 LogosButton {
                     text: "Refresh"
-                    enabled: root.running
+                    enabled: root.running && root.featureEnabled
                     onClicked: root.refresh()
                 }
             }
@@ -64,6 +65,15 @@ Item {
                 Layout.fillWidth: true
                 visible: !root.running
                 text: "Start the node from Overview to search the Kademlia DHT."
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.warning
+                wrapMode: Text.Wrap
+            }
+
+            LogosText {
+                Layout.fillWidth: true
+                visible: root.running && !root.featureEnabled
+                text: "Kademlia DHT is disabled in Settings. Stop the node, enable it, then apply the configuration."
                 font.pixelSize: Theme.typography.secondaryText
                 color: Theme.palette.warning
                 wrapMode: Text.Wrap
@@ -121,7 +131,7 @@ Item {
                         LogosTextField {
                             id: peerIdField
                             Layout.fillWidth: true
-                            enabled: root.running
+                            enabled: root.running && root.featureEnabled
                             placeholderText: "Peer ID"
                             onTextChanged: root.successMessage = ""
                         }
@@ -129,7 +139,7 @@ Item {
                         LogosButton {
                             text: "Find"
                             variant: LogosButton.Variant.Primary
-                            enabled: root.running && peerIdField.text.trim().length > 0
+                            enabled: root.running && root.featureEnabled && peerIdField.text.trim().length > 0
                             onClicked: root.backend.dhtFindPeer(peerIdField.text)
                         }
                     }
@@ -146,8 +156,9 @@ Item {
                     LogosText {
                         Layout.fillWidth: true
                         visible: root.results.length === 0
-                        text: root.running ? "Enter a peer ID to find the closest DHT peers."
-                                           : "No results are available while the node is stopped."
+                        text: !root.running ? "No results are available while the node is stopped."
+                                            : !root.featureEnabled ? "DHT is disabled in Settings."
+                                                                   : "Enter a peer ID to find the closest DHT peers."
                         font.pixelSize: Theme.typography.secondaryText
                         color: Theme.palette.textTertiary
                         wrapMode: Text.Wrap
