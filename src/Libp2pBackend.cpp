@@ -670,6 +670,7 @@ void Libp2pBackend::refreshMetrics() {
                        {"gossipsubLowPeerTopics", 0},
                        {"gossipsubHealthyTopics", 0},
                        {"gossipsubRateLimitHits", 0},
+                       {"gossipsubQueueDepth", 0},
                        {"gossipsubQueueDrops", 0},
                        {"dhtRoutingPeers", 0},
                        {"dhtRoutingBuckets", 0},
@@ -830,6 +831,8 @@ void Libp2pBackend::refreshMetrics() {
         else if (name == QStringLiteral("libp2p_gossipsub_low_peers_topics")) add("gossipsubLowPeerTopics");
         else if (name == QStringLiteral("libp2p_gossipsub_healthy_peers_topics")) add("gossipsubHealthyTopics");
         else if (metricMatches(name, "libp2p_gossipsub_peers_rate_limit_hits")) add("gossipsubRateLimitHits");
+        else if (name == QStringLiteral("libp2p_module_gossipsub_queue_depth")) add("gossipsubQueueDepth");
+        else if (metricMatches(name, "libp2p_module_gossipsub_queue_dropped")) add("gossipsubQueueDrops");
         else if (metricMatches(name, "libp2p_pubsub_medium_priority_queue_drops")
                  || metricMatches(name, "libp2p_pubsub_low_priority_queue_drops")) add("gossipsubQueueDrops");
 
@@ -947,7 +950,9 @@ void Libp2pBackend::refreshMetrics() {
             storeSeriesMap(streamProtocols, protocol, group);
         }
 
-        if (name.startsWith(QStringLiteral("libp2p_pubsub_")) || name.startsWith(QStringLiteral("libp2p_gossipsub_"))) {
+        if (name.startsWith(QStringLiteral("libp2p_pubsub_"))
+            || name.startsWith(QStringLiteral("libp2p_gossipsub_"))
+            || name.startsWith(QStringLiteral("libp2p_module_gossipsub_"))) {
             const QString topic = labels.value(QStringLiteral("topic")).toString();
             if (!topic.isEmpty()) {
                 QVariantMap group = seriesMap(gossipsubTopics, topic);
@@ -964,6 +969,10 @@ void Libp2pBackend::refreshMetrics() {
                     group["fanoutPeers"] = value;
                 else if (name == QStringLiteral("libp2p_gossipsub_peers_per_topic_gossipsub"))
                     group["gossipsubPeers"] = value;
+                else if (name == QStringLiteral("libp2p_module_gossipsub_queue_depth"))
+                    group["queueDepth"] = value;
+                else if (metricMatches(name, "libp2p_module_gossipsub_queue_dropped"))
+                    group["queueDrops"] = value;
                 storeSeriesMap(gossipsubTopics, topic, group);
             }
         }

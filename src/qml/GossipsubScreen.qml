@@ -143,6 +143,7 @@ Item {
                 StatCard { Layout.fillWidth: true; title: "Failed publishes"; value: root.metric("gossipsubFailedPublishes"); iconSource: "assets/gossipsub.svg" }
                 StatCard { Layout.fillWidth: true; title: "Signature failures"; value: root.metric("gossipsubSignatureFailures"); iconSource: "assets/gossipsub.svg" }
                 StatCard { Layout.fillWidth: true; title: "Rate-limit hits"; value: root.metric("gossipsubRateLimitHits"); iconSource: "assets/gossipsub.svg" }
+                StatCard { Layout.fillWidth: true; title: "Queued messages"; value: root.metric("gossipsubQueueDepth"); iconSource: "assets/gossipsub.svg" }
                 StatCard { Layout.fillWidth: true; title: "Queue drops"; value: root.metric("gossipsubQueueDrops"); iconSource: "assets/gossipsub.svg" }
             }
 
@@ -168,6 +169,7 @@ Item {
                                 LogosText { text: "Published " + (modelData.published || 0); color: Theme.palette.textSecondary }
                                 LogosText { text: "Received " + (modelData.received || 0); color: Theme.palette.textSecondary }
                                 LogosText { text: "Rebroadcast " + (modelData.rebroadcasted || 0); color: Theme.palette.textSecondary }
+                                LogosText { text: "Queue " + (modelData.queueDepth || 0) + " / " + (modelData.queueDrops || 0) + " dropped"; color: Theme.palette.textSecondary }
                             }
                         }
                     }

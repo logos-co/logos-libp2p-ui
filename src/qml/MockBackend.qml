@@ -181,7 +181,9 @@ QtObject {
                             "rebroadcasted": metricsTick,
                             "meshPeers": Math.min(6, connectedPeers),
                             "fanoutPeers": 0,
-                            "gossipsubPeers": connectedPeers
+                            "gossipsubPeers": connectedPeers,
+                            "queueDepth": 0,
+                            "queueDrops": 0
                         })
         }
         return {
@@ -230,7 +232,7 @@ QtObject {
             "relayBytesSent": 0,
             "nodeUptimeSeconds": startedAtMs > 0 ? Math.floor((Date.now() - startedAtMs) / 1000) : 0,
             "lastMetricsUpdateMs": Date.now(),
-            "availableMetrics": ["libp2p_network_bytes"],
+            "availableMetrics": ["libp2p_network_bytes", "libp2p_module_gossipsub_queue_depth", "libp2p_module_gossipsub_queue_dropped_total"],
             "metricSeries": [],
             "trafficHistory": metricHistory,
             "trafficByProtocol": [],
@@ -243,6 +245,8 @@ QtObject {
             "gossipsubLowPeerTopics": 0,
             "gossipsubHealthyTopics": connectedPeers > 0 ? topics.length : 0,
             "gossipsubRateLimitHits": 0,
+            "gossipsubQueueDepth": 0,
+            "gossipsubQueueDrops": 0,
             "dhtMessagesByType": [],
             "dhtBucketSizes": [],
             "dhtRoutingInsertions": 0,
