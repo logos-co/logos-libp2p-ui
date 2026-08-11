@@ -17,8 +17,6 @@ target_link_libraries(appqml PRIVATE
     Qt6::Qml
 )
 
-set_source_files_properties(MockBackend.qml PROPERTIES QML_SINGLETON TRUE)
-
 qt_add_qml_module(appqml
     URI Libp2pBackend
     VERSION 1.0
@@ -29,17 +27,18 @@ qt_add_qml_module(appqml
         SidebarItem.qml
         OverviewScreen.qml
         PeersScreen.qml
+        TrafficScreen.qml
+        MetricLineChart.qml
         StreamsScreen.qml
         GossipsubScreen.qml
         DhtScreen.qml
         ServiceDiscoveryScreen.qml
+        ConnectivityScreen.qml
         SettingsScreen.qml
         CopyField.qml
         StatCard.qml
         PlaceholderScreen.qml
         ErrorToast.qml
-        MockBackend.qml
-
     RESOURCES
         assets/network.svg
         assets/overview.svg

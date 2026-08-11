@@ -6,8 +6,10 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QMap>
 #include <QSet>
 #include <QStringList>
+#include <QDateTime>
 #include <QVariantMap>
 
 #include <cmath>
@@ -20,6 +22,7 @@ namespace {
 constexpr int kInboundDirection = 0;
 constexpr int kOutboundDirection = 1;
 constexpr int kDefaultMetricsRefreshIntervalMs = 5000;
+constexpr qint64 kMetricHistoryRetentionMs = 30 * 60 * 1000;
 
 const QString kConfigSettingsKey = QStringLiteral("libp2p-ui/nodeConfig");
 const QString kMetricsIntervalSettingsKey = QStringLiteral("libp2p-ui/metricsRefreshIntervalMs");
@@ -75,6 +78,13 @@ Libp2pBackend::Libp2pBackend(LogosAPI* logosAPI, QObject* parent) : Libp2pBacken
     setNodeConfigJson(QString());
     setSettingsEditable(true);
     setMetricsRefreshIntervalMs(kDefaultMetricsRefreshIntervalMs);
+
+    m_metricsTimer = new QTimer(this);
+    m_metricsTimer->setTimerType(Qt::CoarseTimer);
+    connect(m_metricsTimer, &QTimer::timeout, this, [this]() {
+        refreshPeers();
+        refreshMetrics();
+    });
 
     m_config = defaultConfig();
     loadSettings();
@@ -374,6 +384,9 @@ void Libp2pBackend::start() {
 
     setStatus(Running);
     setSettingsEditable(false);
+    resetMetricHistory();
+    m_nodeUptime.start();
+    updateMetricsTimer();
     refreshPeers();
     refreshMetrics();
     refreshOverview();
@@ -412,6 +425,7 @@ void Libp2pBackend::stop() {
 
     setStatus(Stopped);
     setSettingsEditable(true);
+    updateMetricsTimer();
     clearRuntimeInfo();
     emit stopCompleted();
 }
@@ -639,16 +653,93 @@ void Libp2pBackend::refreshMetrics() {
                        {"openInboundStreams", 0},
                        {"openOutboundStreams", 0},
                        {"streamCapRejections", 0},
+                       {"streamsOpened", 0},
+                       {"streamsClosed", 0},
+                       {"streamResets", 0},
+                       {"streamTimeouts", 0},
                        {"gossipsubPublished", 0},
                        {"gossipsubReceived", 0},
+                       {"gossipsubDuplicates", 0},
+                       {"gossipsubDuplicateRatio", 0},
+                       {"gossipsubValidationSuccesses", 0},
+                       {"gossipsubValidationFailures", 0},
+                       {"gossipsubValidationIgnored", 0},
+                       {"gossipsubSignatureFailures", 0},
+                       {"gossipsubFailedPublishes", 0},
+                       {"gossipsubNoPeerTopics", 0},
+                       {"gossipsubLowPeerTopics", 0},
+                       {"gossipsubHealthyTopics", 0},
+                       {"gossipsubRateLimitHits", 0},
+                       {"gossipsubQueueDepth", 0},
+                       {"gossipsubQueueDrops", 0},
                        {"dhtRoutingPeers", 0},
                        {"dhtRoutingBuckets", 0},
                        {"dhtNetworkSizeEstimate", 0},
+                       {"dhtRoutingInsertions", 0},
+                       {"dhtRoutingReplacements", 0},
+                       {"dhtRoutingEvictions", 0},
+                       {"dhtLivenessSuccesses", 0},
+                       {"dhtLivenessFailures", 0},
+                       {"dhtLookupFollowups", 0},
+                       {"dhtProviderRejections", 0},
+                       {"dhtProviderSpillovers", 0},
+                       {"dhtRepublishedRegions", 0},
+                       {"dhtRepublishedKeys", 0},
                        {"discoveryAdvertisements", 0},
                        {"discoveryServices", 0},
                        {"discoveryServicePeers", 0},
                        {"discoveryLookupRequests", 0},
-                       {"discoveryPeersFound", 0}};
+                       {"discoveryPeersFound", 0},
+                       {"discoveryExpiredAdvertisements", 0},
+                       {"discoveryServiceTables", 0},
+                       {"discoveryTableInsertions", 0},
+                       {"discoveryTrackedIps", 0},
+                       {"discoveryPendingActions", 0},
+                       {"discoveryActionsExecuted", 0},
+                       {"discoveryServicesAdded", 0},
+                       {"discoveryServicesRemoved", 0},
+                       {"trafficBytesReceived", 0},
+                       {"trafficBytesSent", 0},
+                       {"trafficSessionBytesReceived", 0},
+                       {"trafficSessionBytesSent", 0},
+                       {"trafficReceiveRate", 0},
+                       {"trafficSendRate", 0},
+                       {"trafficPeakReceiveRate", m_peakReceiveRate},
+                       {"trafficPeakSendRate", m_peakSendRate},
+                       {"dialAttempts", 0},
+                       {"dialSuccesses", 0},
+                       {"dialFailures", 0},
+                       {"dialSuccessRate", 0},
+                       {"dialLatencyP50Ms", 0},
+                       {"dialLatencyP95Ms", 0},
+                       {"dialLatencyP99Ms", 0},
+                       {"dialLatencyAvailable", false},
+                       {"failedUpgradesInbound", 0},
+                       {"failedUpgradesOutbound", 0},
+                       {"connectionManagerTrims", 0},
+                       {"connectionManagerPrunedPeers", 0},
+                       {"connectionsOpened", 0},
+                       {"connectionsClosed", 0},
+                       {"autonatReachability", QStringLiteral("Unknown")},
+                       {"autonatConfidence", 0},
+                       {"autonatV2Reachability", QStringLiteral("Unknown")},
+                       {"autonatV2Confidence", 0},
+                       {"relayReservationsActive", 0},
+                       {"relayCircuitsActive", 0},
+                       {"relayBytesReceived", 0},
+                       {"relayBytesSent", 0},
+                       {"nodeUptimeSeconds", m_nodeUptime.isValid() ? m_nodeUptime.elapsed() / 1000 : 0},
+                       {"lastMetricsUpdateMs", 0},
+                       {"metricSeries", QVariantList{}},
+                       {"availableMetrics", QVariantList{}},
+                       {"trafficHistory", m_metricHistory},
+                       {"trafficByProtocol", QVariantList{}},
+                       {"trafficByAgent", QVariantList{}},
+                       {"streamsByProtocol", QVariantList{}},
+                       {"gossipsubByTopic", QVariantList{}},
+                       {"dhtMessagesByType", QVariantList{}},
+                       {"dhtBucketSizes", QVariantList{}},
+                       {"discoveryMessagesByType", QVariantList{}}};
 
     if (status() != Running) {
         setMetrics(values);
@@ -659,11 +750,41 @@ void Libp2pBackend::refreshMetrics() {
 
     const QVariantMap payload = m_logos->libp2p_module.collectMetrics();
     const QVariantList series = payload.value(QStringLiteral("metrics")).toList();
+    QVariantList normalizedSeries;
+    QSet<QString> available;
+    QVariantMap protocolTraffic;
+    QVariantMap agentTraffic;
+    QVariantMap streamProtocols;
+    QVariantMap gossipsubTopics;
+    QVariantMap dhtMessageTypes;
+    QVariantMap dhtBuckets;
+    QVariantMap discoveryMessageTypes;
+    QMap<double, double> successfulDialBuckets;
+
+    auto metricMatches = [](const QString& actual, const char* base) {
+        const QString expected = QString::fromLatin1(base);
+        return actual == expected || actual == expected + QStringLiteral("_total");
+    };
+    auto seriesMap = [](QVariantMap& groups, const QString& key) {
+        return groups.value(key).toMap();
+    };
+    auto storeSeriesMap = [](QVariantMap& groups, const QString& key, const QVariantMap& item) {
+        groups.insert(key, item);
+    };
+    auto accumulateField = [](QVariantMap item, const QString& field, double value) {
+        item[field] = item.value(field).toDouble() + value;
+        return item;
+    };
+
     for (const QVariant& item : series) {
         const QVariantMap metric = item.toMap();
         const QString name = metric.value(QStringLiteral("name")).toString();
         const QVariantMap labels = metric.value(QStringLiteral("labels")).toMap();
         const double value = metric.value(QStringLiteral("value")).toDouble();
+        if (name.isEmpty())
+            continue;
+        normalizedSeries.append(metric);
+        available.insert(name);
         auto add = [&](const char* key) { values[QString::fromLatin1(key)] = values.value(QString::fromLatin1(key)).toDouble() + value; };
 
         if (name == QStringLiteral("libp2p_peers"))
@@ -699,10 +820,269 @@ void Libp2pBackend::refreshMetrics() {
             add("discoveryLookupRequests");
         else if (name == QStringLiteral("cd_lookup_peers_found") || name == QStringLiteral("cd_lookup_peers_found_total"))
             add("discoveryPeersFound");
+
+        if (metricMatches(name, "libp2p_gossipsub_duplicate")) add("gossipsubDuplicates");
+        else if (metricMatches(name, "libp2p_pubsub_validation_success")) add("gossipsubValidationSuccesses");
+        else if (metricMatches(name, "libp2p_pubsub_validation_failure")) add("gossipsubValidationFailures");
+        else if (metricMatches(name, "libp2p_pubsub_validation_ignore")) add("gossipsubValidationIgnored");
+        else if (metricMatches(name, "libp2p_pubsub_sig_verify_failure")) add("gossipsubSignatureFailures");
+        else if (metricMatches(name, "libp2p_gossipsub_failed_publish")) add("gossipsubFailedPublishes");
+        else if (name == QStringLiteral("libp2p_gossipsub_no_peers_topics")) add("gossipsubNoPeerTopics");
+        else if (name == QStringLiteral("libp2p_gossipsub_low_peers_topics")) add("gossipsubLowPeerTopics");
+        else if (name == QStringLiteral("libp2p_gossipsub_healthy_peers_topics")) add("gossipsubHealthyTopics");
+        else if (metricMatches(name, "libp2p_gossipsub_peers_rate_limit_hits")) add("gossipsubRateLimitHits");
+        else if (name == QStringLiteral("libp2p_module_gossipsub_queue_depth")) add("gossipsubQueueDepth");
+        else if (metricMatches(name, "libp2p_module_gossipsub_queue_dropped")) add("gossipsubQueueDrops");
+        else if (metricMatches(name, "libp2p_pubsub_medium_priority_queue_drops")
+                 || metricMatches(name, "libp2p_pubsub_low_priority_queue_drops")) add("gossipsubQueueDrops");
+
+        if (metricMatches(name, "libp2p_streams_opened")) add("streamsOpened");
+        else if (metricMatches(name, "libp2p_streams_closed")) add("streamsClosed");
+        else if (metricMatches(name, "libp2p_stream_resets")) add("streamResets");
+        else if (metricMatches(name, "libp2p_stream_timeouts")) add("streamTimeouts");
+        if (metricMatches(name, "libp2p_connections_opened")) add("connectionsOpened");
+        else if (metricMatches(name, "libp2p_connections_closed")) add("connectionsClosed");
+
+        if (metricMatches(name, "kad_routing_table_insertions")) add("dhtRoutingInsertions");
+        else if (metricMatches(name, "kad_routing_table_replacements")) add("dhtRoutingReplacements");
+        else if (metricMatches(name, "kad_routing_table_evictions")) add("dhtRoutingEvictions");
+        else if (metricMatches(name, "kad_routing_table_liveness_probes")) {
+            if (labels.value(QStringLiteral("result")).toString().compare(QStringLiteral("success"), Qt::CaseInsensitive) == 0)
+                add("dhtLivenessSuccesses");
+            else
+                add("dhtLivenessFailures");
+        } else if (metricMatches(name, "kad_lookup_followups")) add("dhtLookupFollowups");
+        else if (metricMatches(name, "kad_provider_rejections_sent")) add("dhtProviderRejections");
+        else if (metricMatches(name, "kad_provider_spillover_rounds")) add("dhtProviderSpillovers");
+        else if (metricMatches(name, "kad_provider_republish_regions")) add("dhtRepublishedRegions");
+        else if (metricMatches(name, "kad_provider_republish_keys")) add("dhtRepublishedKeys");
+
+        if (metricMatches(name, "cd_registrar_ads_expired")) add("discoveryExpiredAdvertisements");
+        else if (name == QStringLiteral("cd_service_tables_count")) add("discoveryServiceTables");
+        else if (metricMatches(name, "cd_service_table_insertions")) add("discoveryTableInsertions");
+        else if (name == QStringLiteral("cd_iptree_total_ips")) add("discoveryTrackedIps");
+        else if (name == QStringLiteral("cd_advertiser_pending_actions")) add("discoveryPendingActions");
+        else if (metricMatches(name, "cd_advertiser_actions_executed")) add("discoveryActionsExecuted");
+        else if (metricMatches(name, "cd_advertiser_services_added")) add("discoveryServicesAdded");
+        else if (metricMatches(name, "cd_advertiser_services_removed")) add("discoveryServicesRemoved");
+
+        if (metricMatches(name, "libp2p_network_bytes")) {
+            if (labels.value(QStringLiteral("direction")).toString() == QStringLiteral("in"))
+                add("trafficBytesReceived");
+            else if (labels.value(QStringLiteral("direction")).toString() == QStringLiteral("out"))
+                add("trafficBytesSent");
+        } else if (metricMatches(name, "libp2p_protocols_bytes")) {
+            const QString protocol = labels.value(QStringLiteral("protocol"), QStringLiteral("unknown")).toString();
+            QVariantMap group = seriesMap(protocolTraffic, protocol);
+            group["protocol"] = protocol;
+            const QString field = labels.value(QStringLiteral("direction")).toString() == QStringLiteral("in")
+                                      ? QStringLiteral("bytesReceived") : QStringLiteral("bytesSent");
+            storeSeriesMap(protocolTraffic, protocol, accumulateField(group, field, value));
+        } else if (metricMatches(name, "libp2p_peers_traffic_read") || metricMatches(name, "libp2p_peers_traffic_write")) {
+            const QString agent = labels.value(QStringLiteral("agent"), QStringLiteral("unknown")).toString();
+            QVariantMap group = seriesMap(agentTraffic, agent);
+            group["agent"] = agent;
+            const QString field = name.contains(QStringLiteral("read")) ? QStringLiteral("bytesReceived") : QStringLiteral("bytesSent");
+            storeSeriesMap(agentTraffic, agent, accumulateField(group, field, value));
+        } else if (metricMatches(name, "libp2p_total_dial_attempts")) {
+            add("dialAttempts");
+        } else if (metricMatches(name, "libp2p_successful_dials")) {
+            add("dialSuccesses");
+        } else if (metricMatches(name, "libp2p_failed_dials")) {
+            add("dialFailures");
+        } else if (name == QStringLiteral("libp2p_dial_duration_ms_bucket")
+                   && labels.value(QStringLiteral("result")).toString() == QStringLiteral("success")) {
+            bool isFiniteBucket = false;
+            const double upperBound = labels.value(QStringLiteral("le")).toString().toDouble(&isFiniteBucket);
+            if (isFiniteBucket)
+                successfulDialBuckets[upperBound] += value;
+        } else if (metricMatches(name, "libp2p_failed_upgrades_incoming")) {
+            add("failedUpgradesInbound");
+        } else if (metricMatches(name, "libp2p_failed_upgrades_outgoing")) {
+            add("failedUpgradesOutbound");
+        } else if (name == QStringLiteral("libp2p_connmgr_trim_total") || name == QStringLiteral("libp2p_connmgr_trim_total_total")) {
+            add("connectionManagerTrims");
+        } else if (name == QStringLiteral("libp2p_connmgr_pruned_peers_total") || name == QStringLiteral("libp2p_connmgr_pruned_peers_total_total")) {
+            add("connectionManagerPrunedPeers");
+        } else if (name == QStringLiteral("libp2p_autonat_reachability_confidence")
+                   || name == QStringLiteral("libp2p_autonat_v2_reachability_confidence")) {
+            const QString reachability = labels.value(QStringLiteral("reachability"), QStringLiteral("Unknown")).toString();
+            const bool v2 = name.contains(QStringLiteral("_v2_"));
+            const QString confidenceKey = v2 ? QStringLiteral("autonatV2Confidence") : QStringLiteral("autonatConfidence");
+            const QString stateKey = v2 ? QStringLiteral("autonatV2Reachability") : QStringLiteral("autonatReachability");
+            if (value >= values.value(confidenceKey).toDouble()) {
+                values[confidenceKey] = value;
+                values[stateKey] = reachability;
+            }
+        } else if (metricMatches(name, "libp2p_relay_reservations_active")) {
+            add("relayReservationsActive");
+        } else if (metricMatches(name, "libp2p_relay_circuits_active")) {
+            add("relayCircuitsActive");
+        } else if (metricMatches(name, "libp2p_relay_bytes")) {
+            const QString field = labels.value(QStringLiteral("direction")).toString() == QStringLiteral("in")
+                                      ? QStringLiteral("relayBytesReceived") : QStringLiteral("relayBytesSent");
+            values[field] = values.value(field).toDouble() + value;
+        }
+
+        if (name == QStringLiteral("libp2p_protocol_streams_open")
+            || name == QStringLiteral("libp2p_protocol_stream_cap_rejections")
+            || name == QStringLiteral("libp2p_protocol_stream_cap_rejections_total")
+            || metricMatches(name, "libp2p_streams_opened")
+            || metricMatches(name, "libp2p_streams_closed")) {
+            const QString protocol = labels.value(QStringLiteral("protocol"), QStringLiteral("unknown")).toString();
+            QVariantMap group = seriesMap(streamProtocols, protocol);
+            group["protocol"] = protocol;
+            if (name == QStringLiteral("libp2p_protocol_streams_open")) {
+                const QString field = labels.value(QStringLiteral("direction")).toString() == QStringLiteral("in")
+                                          ? QStringLiteral("inbound") : QStringLiteral("outbound");
+                group = accumulateField(group, field, value);
+                group["total"] = group.value("inbound").toDouble() + group.value("outbound").toDouble();
+            } else if (metricMatches(name, "libp2p_streams_opened")) {
+                group = accumulateField(group, QStringLiteral("opened"), value);
+            } else if (metricMatches(name, "libp2p_streams_closed")) {
+                group = accumulateField(group, QStringLiteral("closed"), value);
+            } else {
+                group = accumulateField(group, QStringLiteral("rejections"), value);
+                const QString scope = labels.value(QStringLiteral("scope")).toString();
+                if (!scope.isEmpty())
+                    group = accumulateField(group, scope == QStringLiteral("per_peer") ? QStringLiteral("perPeerRejections") : QStringLiteral("totalRejections"), value);
+            }
+            storeSeriesMap(streamProtocols, protocol, group);
+        }
+
+        if (name.startsWith(QStringLiteral("libp2p_pubsub_"))
+            || name.startsWith(QStringLiteral("libp2p_gossipsub_"))
+            || name.startsWith(QStringLiteral("libp2p_module_gossipsub_"))) {
+            const QString topic = labels.value(QStringLiteral("topic")).toString();
+            if (!topic.isEmpty()) {
+                QVariantMap group = seriesMap(gossipsubTopics, topic);
+                group["topic"] = topic;
+                if (metricMatches(name, "libp2p_pubsub_messages_published"))
+                    group = accumulateField(group, QStringLiteral("published"), value);
+                else if (metricMatches(name, "libp2p_pubsub_received_messages"))
+                    group = accumulateField(group, QStringLiteral("received"), value);
+                else if (metricMatches(name, "libp2p_pubsub_messages_rebroadcasted"))
+                    group = accumulateField(group, QStringLiteral("rebroadcasted"), value);
+                else if (name == QStringLiteral("libp2p_gossipsub_peers_per_topic_mesh"))
+                    group["meshPeers"] = value;
+                else if (name == QStringLiteral("libp2p_gossipsub_peers_per_topic_fanout"))
+                    group["fanoutPeers"] = value;
+                else if (name == QStringLiteral("libp2p_gossipsub_peers_per_topic_gossipsub"))
+                    group["gossipsubPeers"] = value;
+                else if (name == QStringLiteral("libp2p_module_gossipsub_queue_depth"))
+                    group["queueDepth"] = value;
+                else if (metricMatches(name, "libp2p_module_gossipsub_queue_dropped"))
+                    group["queueDrops"] = value;
+                storeSeriesMap(gossipsubTopics, topic, group);
+            }
+        }
+
+        if (name.startsWith(QStringLiteral("kad_message")) || name.startsWith(QStringLiteral("kad_messages"))) {
+            const QString type = labels.value(QStringLiteral("type"), QStringLiteral("unknown")).toString();
+            QVariantMap group = seriesMap(dhtMessageTypes, type);
+            group["type"] = type;
+            if (metricMatches(name, "kad_messages_sent")) group = accumulateField(group, QStringLiteral("messagesSent"), value);
+            else if (metricMatches(name, "kad_messages_received")) group = accumulateField(group, QStringLiteral("messagesReceived"), value);
+            else if (metricMatches(name, "kad_message_bytes_sent")) group = accumulateField(group, QStringLiteral("bytesSent"), value);
+            else if (metricMatches(name, "kad_message_bytes_received")) group = accumulateField(group, QStringLiteral("bytesReceived"), value);
+            storeSeriesMap(dhtMessageTypes, type, group);
+        } else if (name == QStringLiteral("kad_routing_table_bucket_size")) {
+            const QString bucket = labels.value(QStringLiteral("bucket"), QStringLiteral("unknown")).toString();
+            dhtBuckets[bucket] = QVariantMap{{"bucket", bucket}, {"peers", value}};
+        }
+
+        if (name.startsWith(QStringLiteral("cd_message")) || name.startsWith(QStringLiteral("cd_messages"))) {
+            const QString type = labels.value(QStringLiteral("type"), QStringLiteral("unknown")).toString();
+            QVariantMap group = seriesMap(discoveryMessageTypes, type);
+            group["type"] = type;
+            if (metricMatches(name, "cd_messages_sent")) group = accumulateField(group, QStringLiteral("messagesSent"), value);
+            else if (metricMatches(name, "cd_messages_received")) group = accumulateField(group, QStringLiteral("messagesReceived"), value);
+            else if (metricMatches(name, "cd_message_bytes_sent")) group = accumulateField(group, QStringLiteral("bytesSent"), value);
+            else if (metricMatches(name, "cd_message_bytes_received")) group = accumulateField(group, QStringLiteral("bytesReceived"), value);
+            storeSeriesMap(discoveryMessageTypes, type, group);
+        }
     }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    auto updateCounterRate = [&](const QString& metricKey, const QString& rateKey) {
+        const double current = values.value(metricKey).toDouble();
+        if (!m_sessionBaselines.contains(metricKey))
+            m_sessionBaselines[metricKey] = current;
+        if (m_previousMetricsTimestampMs > 0 && m_previousCounters.contains(metricKey)) {
+            const double previous = m_previousCounters.value(metricKey).toDouble();
+            const double delta = current >= previous ? current - previous : current;
+            const double seconds = (nowMs - m_previousMetricsTimestampMs) / 1000.0;
+            values[rateKey] = seconds > 0 ? delta / seconds : 0;
+        }
+        m_previousCounters[metricKey] = current;
+    };
+    updateCounterRate(QStringLiteral("trafficBytesReceived"), QStringLiteral("trafficReceiveRate"));
+    updateCounterRate(QStringLiteral("trafficBytesSent"), QStringLiteral("trafficSendRate"));
+    values["trafficSessionBytesReceived"] = qMax(0.0, values.value("trafficBytesReceived").toDouble() - m_sessionBaselines.value("trafficBytesReceived").toDouble());
+    values["trafficSessionBytesSent"] = qMax(0.0, values.value("trafficBytesSent").toDouble() - m_sessionBaselines.value("trafficBytesSent").toDouble());
+    m_peakReceiveRate = qMax(m_peakReceiveRate, values.value("trafficReceiveRate").toDouble());
+    m_peakSendRate = qMax(m_peakSendRate, values.value("trafficSendRate").toDouble());
+    values["trafficPeakReceiveRate"] = m_peakReceiveRate;
+    values["trafficPeakSendRate"] = m_peakSendRate;
+    const double attempts = values.value("dialAttempts").toDouble();
+    values["dialSuccessRate"] = attempts > 0 ? 100.0 * values.value("dialSuccesses").toDouble() / attempts : 0;
+    if (!successfulDialBuckets.isEmpty() && successfulDialBuckets.last() > 0) {
+        const double observations = successfulDialBuckets.last();
+        auto histogramQuantile = [&](double quantile) {
+            const double target = observations * quantile;
+            for (auto bucket = successfulDialBuckets.cbegin(); bucket != successfulDialBuckets.cend(); ++bucket) {
+                if (bucket.value() >= target)
+                    return bucket.key();
+            }
+            return successfulDialBuckets.lastKey();
+        };
+        values["dialLatencyP50Ms"] = histogramQuantile(0.50);
+        values["dialLatencyP95Ms"] = histogramQuantile(0.95);
+        values["dialLatencyP99Ms"] = histogramQuantile(0.99);
+        values["dialLatencyAvailable"] = true;
+    }
+    const double gossipReceived = values.value("gossipsubReceived").toDouble();
+    const double gossipDuplicates = values.value("gossipsubDuplicates").toDouble();
+    values["gossipsubDuplicateRatio"] = gossipReceived + gossipDuplicates > 0
+        ? 100.0 * gossipDuplicates / (gossipReceived + gossipDuplicates) : 0;
+
+    auto groupsToList = [](const QVariantMap& groups) {
+        QVariantList list;
+        for (auto it = groups.cbegin(); it != groups.cend(); ++it)
+            list.append(it.value());
+        return list;
+    };
+    QVariantList availability;
+    QStringList names = available.values();
+    names.sort();
+    for (const QString& name : names) availability.append(name);
+    values["metricSeries"] = normalizedSeries;
+    values["availableMetrics"] = availability;
+    values["trafficByProtocol"] = groupsToList(protocolTraffic);
+    values["trafficByAgent"] = groupsToList(agentTraffic);
+    values["streamsByProtocol"] = groupsToList(streamProtocols);
+    values["gossipsubByTopic"] = groupsToList(gossipsubTopics);
+    values["dhtMessagesByType"] = groupsToList(dhtMessageTypes);
+    values["dhtBucketSizes"] = groupsToList(dhtBuckets);
+    values["discoveryMessagesByType"] = groupsToList(discoveryMessageTypes);
+    values["lastMetricsUpdateMs"] = nowMs;
+
+    m_metricHistory.append(QVariantMap{{"timestampMs", nowMs},
+                                       {"bytesReceived", values.value("trafficBytesReceived")},
+                                       {"bytesSent", values.value("trafficBytesSent")},
+                                       {"receiveRate", values.value("trafficReceiveRate")},
+                                       {"sendRate", values.value("trafficSendRate")},
+                                       {"peers", values.value("connectedPeersMetric")},
+                                       {"streams", values.value("openStreams")}});
+    while (!m_metricHistory.isEmpty()
+           && nowMs - m_metricHistory.first().toMap().value("timestampMs").toLongLong() > kMetricHistoryRetentionMs)
+        m_metricHistory.removeFirst();
+    values["trafficHistory"] = m_metricHistory;
+    m_previousMetricsTimestampMs = nowMs;
 
     setMetrics(values);
     setActiveStreams(qRound(values.value("openStreams").toDouble()));
+    setRelayReservations(qRound(values.value("relayReservationsActive").toDouble()));
     emit metricsUpdated(values);
 }
 
@@ -795,7 +1175,11 @@ void Libp2pBackend::serviceDiscoveryAdvertise(QString serviceId, QString service
         }
     }
 
-    LogosResult result = m_logos->libp2p_module.discoStartAdvertising(serviceId, serviceData);
+    // An empty advertisement asks the module to create and sign a record for
+    // this node. A non-empty value is only needed when forwarding an XPR that
+    // was created by another switch.
+    LogosResult result =
+        m_logos->libp2p_module.discoStartAdvertising(serviceId, serviceData, QString());
     if (!result.success) {
         reportError(QStringLiteral("Failed to advertise service '%1': %2").arg(serviceId, result.getError()));
         return;
@@ -901,12 +1285,35 @@ void Libp2pBackend::setMetricsRefreshInterval(int intervalMs) {
         return;
     }
     setMetricsRefreshIntervalMs(intervalMs);
+    updateMetricsTimer();
     m_settings.setValue(kMetricsIntervalSettingsKey, intervalMs);
     m_settings.sync();
     emit metricsRefreshIntervalChanged(intervalMs);
 }
 
+void Libp2pBackend::updateMetricsTimer() {
+    if (!m_metricsTimer)
+        return;
+    if (status() == Running && metricsRefreshIntervalMs() > 0) {
+        m_metricsTimer->setInterval(metricsRefreshIntervalMs());
+        m_metricsTimer->start();
+    } else {
+        m_metricsTimer->stop();
+    }
+}
+
+void Libp2pBackend::resetMetricHistory() {
+    m_metricHistory.clear();
+    m_previousCounters.clear();
+    m_sessionBaselines.clear();
+    m_previousMetricsTimestampMs = 0;
+    m_peakReceiveRate = 0;
+    m_peakSendRate = 0;
+}
+
 void Libp2pBackend::clearRuntimeInfo() {
+    updateMetricsTimer();
+    resetMetricHistory();
     setPeerId(QString());
     setListenAddress(QString());
     setConnectedPeers(0);

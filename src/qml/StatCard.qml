@@ -7,7 +7,7 @@ LogosFrame {
     id: root
 
     property string title: ""
-    property int value: 0
+    property var value: 0
     property string iconSource: ""
 
     implicitHeight: 132

@@ -11,16 +11,18 @@ Rectangle {
     implicitWidth: 1200
     implicitHeight: 800
 
-    property var backend: MockBackend
+    required property var backend
     property int selectedIndex: 0
 
     readonly property var screens: [
         { "title": "Overview", "icon": "assets/overview.svg" },
         { "title": "Peers", "icon": "assets/peers.svg" },
+        { "title": "Traffic", "icon": "assets/network.svg" },
         { "title": "Streams", "icon": "assets/streams.svg" },
         { "title": "Gossipsub", "icon": "assets/gossipsub.svg" },
         { "title": "DHT", "icon": "assets/dht.svg" },
         { "title": "Service Discovery", "icon": "assets/discovery.svg" },
+        { "title": "Connectivity", "icon": "assets/relay.svg" },
         { "title": "Settings", "icon": "assets/settings.svg" }
     ]
 
@@ -115,16 +117,20 @@ Rectangle {
                 sourceComponent: {
                     if (root.selectedIndex === 0)
                         return overviewComponent
-                    if (root.selectedIndex === 3)
+                    if (root.selectedIndex === 4)
                         return gossipsubComponent
                     if (root.selectedIndex === 1)
                         return peersComponent
                     if (root.selectedIndex === 2)
+                        return trafficComponent
+                    if (root.selectedIndex === 3)
                         return streamsComponent
-                    if (root.selectedIndex === 4)
-                        return dhtComponent
                     if (root.selectedIndex === 5)
+                        return dhtComponent
+                    if (root.selectedIndex === 6)
                         return serviceDiscoveryComponent
+                    if (root.selectedIndex === 7)
+                        return connectivityComponent
                     return settingsComponent
                 }
             }
@@ -141,6 +147,8 @@ Rectangle {
 
     Component { id: peersComponent; PeersScreen { backend: root.backend } }
 
+    Component { id: trafficComponent; TrafficScreen { backend: root.backend } }
+
     Component { id: streamsComponent; StreamsScreen { backend: root.backend } }
 
     Component {
@@ -154,6 +162,8 @@ Rectangle {
     Component { id: dhtComponent; DhtScreen { backend: root.backend } }
 
     Component { id: serviceDiscoveryComponent; ServiceDiscoveryScreen { backend: root.backend } }
+
+    Component { id: connectivityComponent; ConnectivityScreen { backend: root.backend } }
 
     Component { id: settingsComponent; SettingsScreen { backend: root.backend } }
 }

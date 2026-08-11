@@ -5,9 +5,11 @@
 #include "rep_Libp2pBackend_source.h"
 
 #include <QJsonDocument>
+#include <QElapsedTimer>
 #include <QObject>
 #include <QSettings>
 #include <QString>
+#include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -57,6 +59,8 @@ class Libp2pBackend : public Libp2pBackendSimpleSource {
     bool ensureRunning(const QString& operation);
     bool ensureServiceDiscoveryStarted();
     void clearRuntimeInfo();
+    void updateMetricsTimer();
+    void resetMetricHistory();
 
     LogosAPI* m_logosAPI = nullptr;
     LogosModules* m_logos = nullptr;
@@ -64,4 +68,12 @@ class Libp2pBackend : public Libp2pBackendSimpleSource {
     QSettings m_settings{QStringLiteral("Logos"), QStringLiteral("LogosLibp2p")};
     bool m_initialized = false;
     bool m_serviceDiscoveryStarted = false;
+    QTimer* m_metricsTimer = nullptr;
+    QElapsedTimer m_nodeUptime;
+    QVariantList m_metricHistory;
+    QVariantMap m_previousCounters;
+    QVariantMap m_sessionBaselines;
+    qint64 m_previousMetricsTimestampMs = 0;
+    double m_peakReceiveRate = 0;
+    double m_peakSendRate = 0;
 };
