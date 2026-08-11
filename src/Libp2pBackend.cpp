@@ -742,7 +742,7 @@ void Libp2pBackend::pingPeer(QString peerId) {
             ok = true;
         }
     }
-    m_logos->libp2p_module.streamClose(streamId);
+    m_logos->libp2p_module.streamCloseWithEOF(streamId);
     m_logos->libp2p_module.streamRelease(streamId);
 
     if (!ok) {
