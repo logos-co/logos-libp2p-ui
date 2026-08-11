@@ -705,10 +705,6 @@ void Libp2pBackend::refreshMetrics() {
                        {"trafficSendRate", 0},
                        {"trafficPeakReceiveRate", m_peakReceiveRate},
                        {"trafficPeakSendRate", m_peakSendRate},
-                       {"protobufBytesReceived", 0},
-                       {"protobufBytesSent", 0},
-                       {"protobufMessagesReceived", 0},
-                       {"protobufMessagesSent", 0},
                        {"dialAttempts", 0},
                        {"dialSuccesses", 0},
                        {"dialFailures", 0},
@@ -736,7 +732,6 @@ void Libp2pBackend::refreshMetrics() {
                        {"metricSeries", QVariantList{}},
                        {"availableMetrics", QVariantList{}},
                        {"trafficHistory", m_metricHistory},
-                       {"protobufByKind", QVariantList{}},
                        {"trafficByProtocol", QVariantList{}},
                        {"trafficByAgent", QVariantList{}},
                        {"streamsByProtocol", QVariantList{}},
@@ -756,7 +751,6 @@ void Libp2pBackend::refreshMetrics() {
     const QVariantList series = payload.value(QStringLiteral("metrics")).toList();
     QVariantList normalizedSeries;
     QSet<QString> available;
-    QVariantMap protobufKinds;
     QVariantMap protocolTraffic;
     QVariantMap agentTraffic;
     QVariantMap streamProtocols;
@@ -874,30 +868,6 @@ void Libp2pBackend::refreshMetrics() {
                 add("trafficBytesReceived");
             else if (labels.value(QStringLiteral("direction")).toString() == QStringLiteral("out"))
                 add("trafficBytesSent");
-        } else if (metricMatches(name, "libp2p_protobuf_bytes_received")) {
-            add("protobufBytesReceived");
-            const QString kind = labels.value(QStringLiteral("kind"), QStringLiteral("unknown")).toString();
-            QVariantMap group = seriesMap(protobufKinds, kind);
-            group["kind"] = kind;
-            storeSeriesMap(protobufKinds, kind, accumulateField(group, QStringLiteral("bytesReceived"), value));
-        } else if (metricMatches(name, "libp2p_protobuf_bytes_sent")) {
-            add("protobufBytesSent");
-            const QString kind = labels.value(QStringLiteral("kind"), QStringLiteral("unknown")).toString();
-            QVariantMap group = seriesMap(protobufKinds, kind);
-            group["kind"] = kind;
-            storeSeriesMap(protobufKinds, kind, accumulateField(group, QStringLiteral("bytesSent"), value));
-        } else if (metricMatches(name, "libp2p_protobuf_messages_received")) {
-            add("protobufMessagesReceived");
-            const QString kind = labels.value(QStringLiteral("kind"), QStringLiteral("unknown")).toString();
-            QVariantMap group = seriesMap(protobufKinds, kind);
-            group["kind"] = kind;
-            storeSeriesMap(protobufKinds, kind, accumulateField(group, QStringLiteral("messagesReceived"), value));
-        } else if (metricMatches(name, "libp2p_protobuf_messages_sent")) {
-            add("protobufMessagesSent");
-            const QString kind = labels.value(QStringLiteral("kind"), QStringLiteral("unknown")).toString();
-            QVariantMap group = seriesMap(protobufKinds, kind);
-            group["kind"] = kind;
-            storeSeriesMap(protobufKinds, kind, accumulateField(group, QStringLiteral("messagesSent"), value));
         } else if (metricMatches(name, "libp2p_protocols_bytes")) {
             const QString protocol = labels.value(QStringLiteral("protocol"), QStringLiteral("unknown")).toString();
             QVariantMap group = seriesMap(protocolTraffic, protocol);
@@ -1062,10 +1032,6 @@ void Libp2pBackend::refreshMetrics() {
         values["dialLatencyP99Ms"] = histogramQuantile(0.99);
         values["dialLatencyAvailable"] = true;
     }
-    values["protobufAverageBytesReceived"] = values.value("protobufMessagesReceived").toDouble() > 0
-        ? values.value("protobufBytesReceived").toDouble() / values.value("protobufMessagesReceived").toDouble() : 0;
-    values["protobufAverageBytesSent"] = values.value("protobufMessagesSent").toDouble() > 0
-        ? values.value("protobufBytesSent").toDouble() / values.value("protobufMessagesSent").toDouble() : 0;
     const double gossipReceived = values.value("gossipsubReceived").toDouble();
     const double gossipDuplicates = values.value("gossipsubDuplicates").toDouble();
     values["gossipsubDuplicateRatio"] = gossipReceived + gossipDuplicates > 0
@@ -1083,7 +1049,6 @@ void Libp2pBackend::refreshMetrics() {
     for (const QString& name : names) availability.append(name);
     values["metricSeries"] = normalizedSeries;
     values["availableMetrics"] = availability;
-    values["protobufByKind"] = groupsToList(protobufKinds);
     values["trafficByProtocol"] = groupsToList(protocolTraffic);
     values["trafficByAgent"] = groupsToList(agentTraffic);
     values["streamsByProtocol"] = groupsToList(streamProtocols);

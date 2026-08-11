@@ -11,7 +11,6 @@ Item {
     readonly property bool running: backend && backend.status === 2
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     readonly property var history: metrics.trafficHistory || []
-    readonly property var protobufKinds: metrics.protobufByKind || []
     readonly property var protocols: metrics.trafficByProtocol || []
     readonly property var agents: metrics.trafficByAgent || []
     property int chartWindowMinutes: 15
@@ -25,12 +24,6 @@ Item {
         return (unit === 0 ? number.toFixed(0) : number.toFixed(number >= 100 ? 0 : 1)) + " " + units[unit]
     }
     function formatRate(value) { return formatBytes(value) + "/s" }
-    function hasMetric(prefix) {
-        var names = metrics.availableMetrics || []
-        for (var i = 0; i < names.length; ++i)
-            if (String(names[i]).indexOf(prefix) === 0) return true
-        return false
-    }
 
     Component.onCompleted: if (backend) backend.refreshMetrics()
 
@@ -91,43 +84,6 @@ Item {
                     }
                     MetricLineChart { Layout.fillWidth: true; history: root.history; windowMinutes: root.chartWindowMinutes }
                     LogosText { Layout.fillWidth: true; visible: root.history.length < 2; text: "Two metric samples are required before a rate chart can be drawn."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textTertiary; horizontalAlignment: Text.AlignHCenter }
-                }
-            }
-
-            LogosFrame {
-                Layout.fillWidth: true
-                backgroundColor: Theme.palette.backgroundSecondary
-                borderColor: Theme.palette.borderSecondary
-                radius: Theme.spacing.radiusLarge
-                padding: Theme.spacing.large
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: Theme.spacing.medium
-                    LogosText { text: "Protobuf payloads"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
-                    LogosText { Layout.fillWidth: true; text: "These counters cover protobuf payloads, not all network traffic."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textSecondary; wrapMode: Text.Wrap }
-                    LogosText { Layout.fillWidth: true; visible: !root.hasMetric("libp2p_protobuf_"); text: "Unavailable in this build. Enable libp2p_protobuf_metrics to collect these series."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.warning; wrapMode: Text.Wrap }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: root.hasMetric("libp2p_protobuf_")
-                        LogosText { Layout.fillWidth: true; text: "Received: " + root.formatBytes(root.metric("protobufBytesReceived")) + " in " + root.metric("protobufMessagesReceived") + " messages"; color: Theme.palette.text; font.pixelSize: Theme.typography.secondaryText }
-                        LogosText { Layout.fillWidth: true; text: "Sent: " + root.formatBytes(root.metric("protobufBytesSent")) + " in " + root.metric("protobufMessagesSent") + " messages"; color: Theme.palette.text; font.pixelSize: Theme.typography.secondaryText }
-                    }
-                    Repeater {
-                        model: root.protobufKinds
-                        Rectangle {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            implicitHeight: 42
-                            radius: Theme.spacing.radiusSmall
-                            color: Theme.palette.background
-                            RowLayout {
-                                anchors.fill: parent; anchors.margins: Theme.spacing.small
-                                LogosText { Layout.fillWidth: true; text: modelData.kind; color: Theme.palette.text; elide: Text.ElideRight }
-                                LogosText { text: "↓ " + root.formatBytes(modelData.bytesReceived || 0) + " / " + (modelData.messagesReceived || 0); color: Theme.palette.textSecondary }
-                                LogosText { text: "↑ " + root.formatBytes(modelData.bytesSent || 0) + " / " + (modelData.messagesSent || 0); color: Theme.palette.textSecondary }
-                            }
-                        }
-                    }
                 }
             }
 

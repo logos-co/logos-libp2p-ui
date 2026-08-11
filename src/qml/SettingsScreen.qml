@@ -450,7 +450,6 @@ Item {
                         Layout.fillWidth: true
                         columns: width > 600 ? 2 : 1
                         LogosText { text: "Network traffic: " + (root.hasMetric("libp2p_network_bytes") ? "Available" : "Not sampled"); color: root.hasMetric("libp2p_network_bytes") ? Theme.palette.success : Theme.palette.textTertiary }
-                        LogosText { text: "Protobuf metrics: " + (root.hasMetric("libp2p_protobuf_") ? "Available" : "Unavailable"); color: root.hasMetric("libp2p_protobuf_") ? Theme.palette.success : Theme.palette.textTertiary }
                         LogosText { text: "Protocol traffic: " + (root.hasMetric("libp2p_protocols_bytes") ? "Available" : "Unavailable"); color: root.hasMetric("libp2p_protocols_bytes") ? Theme.palette.success : Theme.palette.textTertiary }
                         LogosText { text: "Agent traffic: " + (root.hasMetric("libp2p_peers_traffic_") ? "Available" : "Unavailable"); color: root.hasMetric("libp2p_peers_traffic_") ? Theme.palette.success : Theme.palette.textTertiary }
                     }
