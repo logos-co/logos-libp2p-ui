@@ -1175,7 +1175,11 @@ void Libp2pBackend::serviceDiscoveryAdvertise(QString serviceId, QString service
         }
     }
 
-    LogosResult result = m_logos->libp2p_module.discoStartAdvertising(serviceId, serviceData);
+    // An empty advertisement asks the module to create and sign a record for
+    // this node. A non-empty value is only needed when forwarding an XPR that
+    // was created by another switch.
+    LogosResult result =
+        m_logos->libp2p_module.discoStartAdvertising(serviceId, serviceData, QString());
     if (!result.success) {
         reportError(QStringLiteral("Failed to advertise service '%1': %2").arg(serviceId, result.getError()));
         return;
