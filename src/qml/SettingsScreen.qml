@@ -7,7 +7,7 @@ import Logos.Controls
 Item {
     id: root
 
-    property var backend: MockBackend
+    property var backend: null
     readonly property var runtimeMetrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     property bool loading: false
     property bool dirty: false

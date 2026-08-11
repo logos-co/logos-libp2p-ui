@@ -11,7 +11,7 @@ Rectangle {
     implicitWidth: 1200
     implicitHeight: 800
 
-    property var backend: MockBackend
+    required property var backend
     property int selectedIndex: 0
 
     readonly property var screens: [

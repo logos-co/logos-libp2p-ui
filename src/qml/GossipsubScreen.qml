@@ -7,7 +7,7 @@ import Logos.Controls
 Item {
     id: root
 
-    property var backend: MockBackend
+    property var backend: null
     property string successMessage: ""
 
     readonly property bool running: backend && backend.status === 2

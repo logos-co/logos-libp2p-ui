@@ -6,7 +6,7 @@ import Logos.Controls
 Item {
     id: root
 
-    property var backend: MockBackend
+    property var backend: null
     readonly property bool running: backend && backend.status === 2
     readonly property var inboundPeers: backend && backend.inboundPeers !== undefined ? backend.inboundPeers : []
     readonly property var outboundPeers: backend && backend.outboundPeers !== undefined ? backend.outboundPeers : []

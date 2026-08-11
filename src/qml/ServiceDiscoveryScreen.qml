@@ -5,7 +5,7 @@ import Logos.Controls
 
 Item {
     id: root
-    property var backend: MockBackend
+    property var backend: null
     readonly property bool running: backend && backend.status === 2
     readonly property bool featureEnabled: !backend || !backend.nodeConfig || backend.nodeConfig.mountServiceDiscovery !== false
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
