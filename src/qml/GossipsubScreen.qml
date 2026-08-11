@@ -15,6 +15,7 @@ Item {
     readonly property var topics: backend && backend.subscribedTopics !== undefined
                                   ? backend.subscribedTopics : []
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
+    readonly property var topicMetrics: metrics.gossipsubByTopic || []
 
     function metric(name) {
         return metrics[name] === undefined ? 0 : metrics[name]
@@ -41,13 +42,6 @@ Item {
     }
 
     Component.onCompleted: refresh()
-
-    Timer {
-        interval: root.backend && root.backend.metricsRefreshIntervalMs > 0 ? root.backend.metricsRefreshIntervalMs : 5000
-        repeat: true
-        running: root.visible && root.running && root.featureEnabled && root.backend.metricsRefreshIntervalMs > 0
-        onTriggered: root.refresh()
-    }
 
     LogosScrollView {
         id: scroll
@@ -134,6 +128,49 @@ Item {
                     title: "Messages received"
                     value: root.metric("gossipsubReceived")
                     iconSource: "assets/gossipsub.svg"
+                }
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width > 850 ? 4 : width > 500 ? 2 : 1
+                columnSpacing: Theme.spacing.medium
+                rowSpacing: Theme.spacing.medium
+                StatCard { Layout.fillWidth: true; title: "Healthy topics"; value: root.metric("gossipsubHealthyTopics"); iconSource: "assets/gossipsub.svg" }
+                StatCard { Layout.fillWidth: true; title: "Low/no-peer topics"; value: Number(root.metric("gossipsubLowPeerTopics")) + Number(root.metric("gossipsubNoPeerTopics")); iconSource: "assets/gossipsub.svg" }
+                StatCard { Layout.fillWidth: true; title: "Duplicate ratio"; value: Number(root.metric("gossipsubDuplicateRatio")).toFixed(1) + "%"; iconSource: "assets/gossipsub.svg" }
+                StatCard { Layout.fillWidth: true; title: "Validation failures"; value: root.metric("gossipsubValidationFailures"); iconSource: "assets/gossipsub.svg" }
+                StatCard { Layout.fillWidth: true; title: "Failed publishes"; value: root.metric("gossipsubFailedPublishes"); iconSource: "assets/gossipsub.svg" }
+                StatCard { Layout.fillWidth: true; title: "Signature failures"; value: root.metric("gossipsubSignatureFailures"); iconSource: "assets/gossipsub.svg" }
+                StatCard { Layout.fillWidth: true; title: "Rate-limit hits"; value: root.metric("gossipsubRateLimitHits"); iconSource: "assets/gossipsub.svg" }
+                StatCard { Layout.fillWidth: true; title: "Queue drops"; value: root.metric("gossipsubQueueDrops"); iconSource: "assets/gossipsub.svg" }
+            }
+
+            LogosFrame {
+                Layout.fillWidth: true
+                visible: root.topicMetrics.length > 0
+                backgroundColor: Theme.palette.backgroundSecondary
+                borderColor: Theme.palette.borderSecondary
+                radius: Theme.spacing.radiusLarge
+                padding: Theme.spacing.large
+                ColumnLayout {
+                    anchors.fill: parent; spacing: Theme.spacing.small
+                    LogosText { text: "Topic health and traffic"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
+                    Repeater {
+                        model: root.topicMetrics
+                        Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true; implicitHeight: 48; radius: Theme.spacing.radiusSmall; color: Theme.palette.background
+                            RowLayout {
+                                anchors.fill: parent; anchors.margins: Theme.spacing.small
+                                LogosText { Layout.fillWidth: true; text: modelData.topic; color: Theme.palette.text; elide: Text.ElideMiddle }
+                                LogosText { text: "Mesh " + (modelData.meshPeers || 0); color: (modelData.meshPeers || 0) > 0 ? Theme.palette.success : Theme.palette.warning }
+                                LogosText { text: "Published " + (modelData.published || 0); color: Theme.palette.textSecondary }
+                                LogosText { text: "Received " + (modelData.received || 0); color: Theme.palette.textSecondary }
+                                LogosText { text: "Rebroadcast " + (modelData.rebroadcasted || 0); color: Theme.palette.textSecondary }
+                            }
+                        }
+                    }
                 }
             }
 

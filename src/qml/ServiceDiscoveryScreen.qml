@@ -11,18 +11,12 @@ Item {
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     readonly property var advertisedServices: backend && backend.advertisedServices !== undefined ? backend.advertisedServices : []
     readonly property var results: backend && backend.discoveryResults !== undefined ? backend.discoveryResults : []
+    readonly property var messageTypes: metrics.discoveryMessagesByType || []
     property string successMessage: ""
 
     function metric(name) { return metrics[name] === undefined ? 0 : metrics[name] }
     function refresh() { if (backend) backend.refreshMetrics() }
     Component.onCompleted: refresh()
-    Timer {
-        interval: root.backend && root.backend.metricsRefreshIntervalMs > 0 ? root.backend.metricsRefreshIntervalMs : 5000
-        repeat: true
-        running: root.visible && root.running && root.featureEnabled && root.backend.metricsRefreshIntervalMs > 0
-        onTriggered: root.refresh()
-    }
-
     LogosScrollView {
         id: scroll
         anchors.fill: parent
@@ -50,6 +44,41 @@ Item {
                 StatCard { Layout.fillWidth: true; title: "Service peers"; value: root.metric("discoveryServicePeers"); iconSource: "assets/discovery.svg" }
                 StatCard { Layout.fillWidth: true; title: "Lookups"; value: root.metric("discoveryLookupRequests"); iconSource: "assets/discovery.svg" }
                 StatCard { Layout.fillWidth: true; title: "Peers found"; value: root.metric("discoveryPeersFound"); iconSource: "assets/discovery.svg" }
+            }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width > 900 ? 4 : width > 500 ? 2 : 1
+                columnSpacing: Theme.spacing.medium; rowSpacing: Theme.spacing.medium
+                StatCard { Layout.fillWidth: true; title: "Expired ads"; value: root.metric("discoveryExpiredAdvertisements"); iconSource: "assets/discovery.svg" }
+                StatCard { Layout.fillWidth: true; title: "Service tables"; value: root.metric("discoveryServiceTables"); iconSource: "assets/discovery.svg" }
+                StatCard { Layout.fillWidth: true; title: "Tracked IPs"; value: root.metric("discoveryTrackedIps"); iconSource: "assets/discovery.svg" }
+                StatCard { Layout.fillWidth: true; title: "Pending actions"; value: root.metric("discoveryPendingActions"); iconSource: "assets/discovery.svg" }
+                StatCard { Layout.fillWidth: true; title: "Table insertions"; value: root.metric("discoveryTableInsertions"); iconSource: "assets/discovery.svg" }
+                StatCard { Layout.fillWidth: true; title: "Actions executed"; value: root.metric("discoveryActionsExecuted"); iconSource: "assets/discovery.svg" }
+                StatCard { Layout.fillWidth: true; title: "Services added"; value: root.metric("discoveryServicesAdded"); iconSource: "assets/discovery.svg" }
+                StatCard { Layout.fillWidth: true; title: "Services removed"; value: root.metric("discoveryServicesRemoved"); iconSource: "assets/discovery.svg" }
+            }
+            LogosFrame {
+                Layout.fillWidth: true
+                visible: root.messageTypes.length > 0
+                backgroundColor: Theme.palette.backgroundSecondary; borderColor: Theme.palette.borderSecondary; radius: Theme.spacing.radiusLarge; padding: Theme.spacing.large
+                ColumnLayout {
+                    anchors.fill: parent; spacing: Theme.spacing.small
+                    LogosText { text: "Protocol messages by type"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
+                    Repeater {
+                        model: root.messageTypes
+                        Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true; implicitHeight: 44; radius: Theme.spacing.radiusSmall; color: Theme.palette.background
+                            RowLayout {
+                                anchors.fill: parent; anchors.margins: Theme.spacing.small
+                                LogosText { Layout.fillWidth: true; text: modelData.type; color: Theme.palette.text }
+                                LogosText { text: "Messages ↓ " + (modelData.messagesReceived || 0) + " ↑ " + (modelData.messagesSent || 0); color: Theme.palette.textSecondary }
+                                LogosText { text: "Bytes ↓ " + (modelData.bytesReceived || 0) + " ↑ " + (modelData.bytesSent || 0); color: Theme.palette.textSecondary }
+                            }
+                        }
+                    }
+                }
             }
             LogosFrame {
                 Layout.fillWidth: true

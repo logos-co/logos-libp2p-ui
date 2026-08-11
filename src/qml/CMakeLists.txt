@@ -29,10 +29,13 @@ qt_add_qml_module(appqml
         SidebarItem.qml
         OverviewScreen.qml
         PeersScreen.qml
+        TrafficScreen.qml
+        MetricLineChart.qml
         StreamsScreen.qml
         GossipsubScreen.qml
         DhtScreen.qml
         ServiceDiscoveryScreen.qml
+        ConnectivityScreen.qml
         SettingsScreen.qml
         CopyField.qml
         StatCard.qml

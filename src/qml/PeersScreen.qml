@@ -11,7 +11,10 @@ Item {
     readonly property var inboundPeers: backend && backend.inboundPeers !== undefined ? backend.inboundPeers : []
     readonly property var outboundPeers: backend && backend.outboundPeers !== undefined ? backend.outboundPeers : []
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
+    readonly property var config: backend && backend.nodeConfig !== undefined ? backend.nodeConfig : ({})
+    readonly property var lastPing: backend && backend.lastPingResult !== undefined ? backend.lastPingResult : ({})
     property string successMessage: ""
+    property string filterText: ""
 
     function metric(name) {
         return metrics[name] === undefined ? 0 : metrics[name]
@@ -23,15 +26,16 @@ Item {
             backend.refreshMetrics()
         }
     }
+    function filtered(peers) {
+        if (!filterText.trim().length) return peers
+        var result = []
+        var needle = filterText.toLowerCase()
+        for (var i = 0; i < peers.length; ++i)
+            if (String(peers[i]).toLowerCase().indexOf(needle) !== -1) result.push(peers[i])
+        return result
+    }
 
     Component.onCompleted: refresh()
-
-    Timer {
-        interval: root.backend && root.backend.metricsRefreshIntervalMs > 0 ? root.backend.metricsRefreshIntervalMs : 5000
-        repeat: true
-        running: root.visible && root.running && root.backend.metricsRefreshIntervalMs > 0
-        onTriggered: root.refresh()
-    }
 
     LogosScrollView {
         id: scroll
@@ -87,6 +91,38 @@ Item {
                 StatCard { Layout.fillWidth: true; title: "Known peers"; value: root.backend ? root.backend.knownPeers : 0; iconSource: "assets/peers.svg" }
             }
 
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width > 850 ? 4 : width > 500 ? 2 : 1
+                columnSpacing: Theme.spacing.medium
+                rowSpacing: Theme.spacing.medium
+                StatCard { Layout.fillWidth: true; title: "Dial success"; value: Number(root.metric("dialSuccessRate")).toFixed(1) + "%"; iconSource: "assets/network.svg" }
+                StatCard { Layout.fillWidth: true; title: "Failed dials"; value: root.metric("dialFailures"); iconSource: "assets/network.svg" }
+                StatCard { Layout.fillWidth: true; title: "Failed upgrades"; value: Number(root.metric("failedUpgradesInbound")) + Number(root.metric("failedUpgradesOutbound")); iconSource: "assets/network.svg" }
+                StatCard { Layout.fillWidth: true; title: "Peers pruned"; value: root.metric("connectionManagerPrunedPeers"); iconSource: "assets/peers.svg" }
+                StatCard { Layout.fillWidth: true; title: "Connections opened"; value: root.metric("connectionsOpened"); iconSource: "assets/peers.svg" }
+                StatCard { Layout.fillWidth: true; title: "Connections closed"; value: root.metric("connectionsClosed"); iconSource: "assets/peers.svg" }
+                StatCard { Layout.fillWidth: true; title: "Trim cycles"; value: root.metric("connectionManagerTrims"); iconSource: "assets/peers.svg" }
+                StatCard { Layout.fillWidth: true; title: "Known / connected"; value: (root.backend ? root.backend.knownPeers : 0) + " / " + root.metric("connectedPeersMetric"); iconSource: "assets/peers.svg" }
+            }
+
+            LogosFrame {
+                Layout.fillWidth: true
+                backgroundColor: Theme.palette.backgroundSecondary
+                borderColor: Theme.palette.borderSecondary
+                radius: Theme.spacing.radiusLarge
+                padding: Theme.spacing.medium
+                ColumnLayout {
+                    anchors.fill: parent; spacing: Theme.spacing.small
+                    LogosText { text: "Connection capacity"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
+                    LogosText { Layout.fillWidth: true; text: root.metric("connectedPeersMetric") + " of " + (root.config.maxConnections || 0) + " total  •  " + root.inboundPeers.length + " of " + (root.config.maxInConnections || 0) + " inbound  •  " + root.outboundPeers.length + " of " + (root.config.maxOutConnections || 0) + " outbound"; color: Theme.palette.textSecondary; wrapMode: Text.Wrap }
+                    Rectangle {
+                        Layout.fillWidth: true; Layout.preferredHeight: 8; radius: 4; color: Theme.palette.backgroundMuted
+                        Rectangle { height: parent.height; radius: parent.radius; color: Theme.palette.success; width: parent.width * Math.min(1, root.metric("connectedPeersMetric") / Math.max(1, root.config.maxConnections || 1)) }
+                    }
+                }
+            }
+
             LogosFrame {
                 Layout.fillWidth: true
                 backgroundColor: Theme.palette.backgroundSecondary
@@ -111,6 +147,12 @@ Item {
                 }
             }
 
+            RowLayout {
+                Layout.fillWidth: true
+                LogosTextField { Layout.fillWidth: true; placeholderText: "Filter connected peer IDs"; text: root.filterText; onTextChanged: root.filterText = text }
+                LogosText { visible: root.lastPing.success === true; text: "Last ping " + root.lastPing.latencyMs + " ms"; color: Theme.palette.textTertiary }
+            }
+
             Repeater {
                 model: [ { "title": "Inbound peers", "peers": root.inboundPeers }, { "title": "Outbound peers", "peers": root.outboundPeers } ]
                 LogosFrame {
@@ -133,7 +175,7 @@ Item {
                             wrapMode: Text.Wrap
                         }
                         Repeater {
-                            model: modelData.peers
+                            model: root.filtered(modelData.peers)
                             Rectangle {
                                 required property var modelData
                                 Layout.fillWidth: true
@@ -147,6 +189,7 @@ Item {
                                     anchors.fill: parent
                                     anchors.margins: Theme.spacing.small
                                     LogosText { Layout.fillWidth: true; text: modelData; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.text; elide: Text.ElideRight }
+                                    LogosButton { text: "Ping"; enabled: root.running; onClicked: root.backend.pingPeer(modelData) }
                                     LogosButton { text: "Disconnect"; enabled: root.running; onClicked: root.backend.disconnectPeer(modelData) }
                                 }
                             }

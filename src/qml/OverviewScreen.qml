@@ -8,6 +8,8 @@ Item {
     id: root
 
     property var backend: MockBackend
+    readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
+    readonly property var config: backend && backend.nodeConfig !== undefined ? backend.nodeConfig : ({})
 
     readonly property int statusStopped: 0
     readonly property int statusStarting: 1
@@ -54,6 +56,33 @@ Item {
         if (!backend || backend[name] === undefined || backend[name] === null)
             return 0
         return backend[name]
+    }
+
+    function metric(name) { return metrics[name] === undefined ? 0 : metrics[name] }
+    function formatBytes(value) {
+        var number = Number(value || 0); var units = ["B", "KiB", "MiB", "GiB", "TiB"]; var unit = 0
+        while (number >= 1024 && unit < units.length - 1) { number /= 1024; ++unit }
+        return (unit === 0 ? number.toFixed(0) : number.toFixed(1)) + " " + units[unit]
+    }
+    function formatDuration(seconds) {
+        seconds = Number(seconds || 0)
+        if (seconds < 60) return Math.floor(seconds) + "s"
+        if (seconds < 3600) return Math.floor(seconds / 60) + "m"
+        if (seconds < 86400) return Math.floor(seconds / 3600) + "h " + Math.floor(seconds % 3600 / 60) + "m"
+        return Math.floor(seconds / 86400) + "d " + Math.floor(seconds % 86400 / 3600) + "h"
+    }
+    function healthWarnings() {
+        var warnings = []
+        if (!running) return warnings
+        if (backendCount("connectedPeers") === 0) warnings.push("No connected peers")
+        if (config.maxConnections && backendCount("connectedPeers") / config.maxConnections >= 0.9) warnings.push("Connection capacity above 90%")
+        if (metric("streamCapRejections") > 0) warnings.push("Protocol stream caps have rejected requests")
+        if ((config.autonat && String(metric("autonatReachability")).indexOf("Not") === 0) || (config.autonatV2 && String(metric("autonatV2Reachability")).indexOf("Not") === 0)) warnings.push("Node is not publicly reachable")
+        if (config.mountKad && metric("dhtRoutingPeers") === 0) warnings.push("DHT routing table is empty")
+        if (config.mountGossipsub && metric("gossipsubNoPeerTopics") > 0) warnings.push("GossipSub topics have no mesh peers")
+        if (metric("gossipsubQueueDrops") > 0) warnings.push("GossipSub queues have dropped messages")
+        if (metric("discoveryPendingActions") > 0) warnings.push("Service discovery has pending actions")
+        return warnings
     }
 
     Component.onCompleted: {
@@ -210,9 +239,23 @@ Item {
                 }
             }
 
+            LogosFrame {
+                Layout.fillWidth: true
+                visible: root.running
+                backgroundColor: root.healthWarnings().length > 0 ? Theme.palette.backgroundSecondary : Theme.palette.backgroundSecondary
+                borderColor: root.healthWarnings().length > 0 ? Theme.palette.warning : Theme.palette.success
+                radius: Theme.spacing.radiusLarge
+                padding: Theme.spacing.medium
+                RowLayout {
+                    anchors.fill: parent
+                    LogosText { text: root.healthWarnings().length > 0 ? "Attention" : "Node healthy"; font.weight: Theme.typography.weightMedium; color: root.healthWarnings().length > 0 ? Theme.palette.warning : Theme.palette.success }
+                    LogosText { Layout.fillWidth: true; text: root.healthWarnings().length > 0 ? root.healthWarnings().join("  •  ") : "No active health warnings."; color: Theme.palette.textSecondary; wrapMode: Text.Wrap }
+                }
+            }
+
             GridLayout {
                 Layout.fillWidth: true
-                columns: width > 1050 ? 5 : width > 680 ? 2 : 1
+                columns: width > 1050 ? 4 : width > 680 ? 2 : 1
                 columnSpacing: Theme.spacing.medium
                 rowSpacing: Theme.spacing.medium
 
@@ -220,6 +263,13 @@ Item {
                     Layout.fillWidth: true
                     title: "Connected Peers"
                     value: root.backendCount("connectedPeers")
+                    iconSource: "assets/peers.svg"
+                }
+
+                StatCard {
+                    Layout.fillWidth: true
+                    title: "Inbound / Outbound"
+                    value: (root.backend && root.backend.inboundPeers ? root.backend.inboundPeers.length : 0) + " / " + (root.backend && root.backend.outboundPeers ? root.backend.outboundPeers.length : 0)
                     iconSource: "assets/peers.svg"
                 }
 
@@ -239,8 +289,8 @@ Item {
 
                 StatCard {
                     Layout.fillWidth: true
-                    title: "DHT Records"
-                    value: root.backendCount("dhtRecords")
+                    title: "DHT Routing Peers"
+                    value: root.metric("dhtRoutingPeers")
                     iconSource: "assets/dht.svg"
                 }
 
@@ -250,6 +300,11 @@ Item {
                     value: root.backendCount("relayReservations")
                     iconSource: "assets/relay.svg"
                 }
+
+                StatCard { Layout.fillWidth: true; title: "Receive rate"; value: root.formatBytes(root.metric("trafficReceiveRate")) + "/s"; iconSource: "assets/network.svg" }
+                StatCard { Layout.fillWidth: true; title: "Send rate"; value: root.formatBytes(root.metric("trafficSendRate")) + "/s"; iconSource: "assets/network.svg" }
+                StatCard { Layout.fillWidth: true; title: "Reachability"; value: config.autonatV2 ? root.metric("autonatV2Reachability") : config.autonat ? root.metric("autonatReachability") : "Not monitored"; iconSource: "assets/network.svg" }
+                StatCard { Layout.fillWidth: true; title: "Uptime"; value: root.formatDuration(root.metric("nodeUptimeSeconds")); iconSource: "assets/overview.svg" }
             }
         }
     }

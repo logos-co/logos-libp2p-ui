@@ -8,6 +8,7 @@ Item {
     id: root
 
     property var backend: MockBackend
+    readonly property var runtimeMetrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     property bool loading: false
     property bool dirty: false
     property string successMessage: ""
@@ -124,6 +125,13 @@ Item {
         jsonPreview.copy()
         jsonPreview.deselect()
         successMessage = "Configuration JSON copied."
+    }
+
+    function hasMetric(prefix) {
+        var names = runtimeMetrics.availableMetrics || []
+        for (var i = 0; i < names.length; ++i)
+            if (String(names[i]).indexOf(prefix) === 0) return true
+        return false
     }
 
     Component.onCompleted: loadConfig()
@@ -435,6 +443,16 @@ Item {
                             if (root.backend)
                                 root.backend.setMetricsRefreshInterval(root.refreshIntervalValue(index))
                         }
+                    }
+                    LogosText { Layout.fillWidth: true; text: "Metric history is retained in memory for 30 minutes and resets when the node restarts."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textSecondary; wrapMode: Text.Wrap }
+                    LogosText { text: "Metrics available in this build"; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textTertiary }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width > 600 ? 2 : 1
+                        LogosText { text: "Network traffic: " + (root.hasMetric("libp2p_network_bytes") ? "Available" : "Not sampled"); color: root.hasMetric("libp2p_network_bytes") ? Theme.palette.success : Theme.palette.textTertiary }
+                        LogosText { text: "Protobuf metrics: " + (root.hasMetric("libp2p_protobuf_") ? "Available" : "Unavailable"); color: root.hasMetric("libp2p_protobuf_") ? Theme.palette.success : Theme.palette.textTertiary }
+                        LogosText { text: "Protocol traffic: " + (root.hasMetric("libp2p_protocols_bytes") ? "Available" : "Unavailable"); color: root.hasMetric("libp2p_protocols_bytes") ? Theme.palette.success : Theme.palette.textTertiary }
+                        LogosText { text: "Agent traffic: " + (root.hasMetric("libp2p_peers_traffic_") ? "Available" : "Unavailable"); color: root.hasMetric("libp2p_peers_traffic_") ? Theme.palette.success : Theme.palette.textTertiary }
                     }
                 }
             }

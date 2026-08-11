@@ -3,6 +3,8 @@ pragma Singleton
 import QtQuick
 
 QtObject {
+    id: root
+
     readonly property bool isMock: true
 
     property int status: 0
@@ -27,6 +29,17 @@ QtObject {
     readonly property string nodeConfigJson: JSON.stringify(nodeConfig, null, 2)
     readonly property bool settingsEditable: status === 0
     property int metricsRefreshIntervalMs: 5000
+    property int metricsTick: 0
+    property double mockBytesReceived: 1048576
+    property double mockBytesSent: 524288
+    property var metricHistory: []
+    property double startedAtMs: 0
+    property Timer metricsTimer: Timer {
+        interval: root.metricsRefreshIntervalMs > 0 ? root.metricsRefreshIntervalMs : 5000
+        repeat: true
+        running: root.status === 2 && root.metricsRefreshIntervalMs > 0
+        onTriggered: root.refreshMetrics()
+    }
 
     signal initCompleted(bool success, string error)
     signal startCompleted
@@ -69,6 +82,11 @@ QtObject {
         inboundPeers = []
         outboundPeers = []
         knownPeers = 0
+        metricsTick = 0
+        metricHistory = []
+        startedAtMs = Date.now()
+        mockBytesReceived = 1048576
+        mockBytesSent = 524288
         metrics = defaultMetrics()
         startCompleted()
         refreshPeers()
@@ -89,6 +107,8 @@ QtObject {
         dhtLookupResults = []
         advertisedServices = []
         discoveryResults = []
+        metricHistory = []
+        startedAtMs = 0
         stopCompleted()
     }
 
@@ -152,6 +172,18 @@ QtObject {
     }
 
     function defaultMetrics() {
+        var topics = []
+        for (var topicIndex = 0; topicIndex < subscribedTopics.length; ++topicIndex) {
+            topics.push({
+                            "topic": subscribedTopics[topicIndex],
+                            "published": metricsTick,
+                            "received": metricsTick * 2,
+                            "rebroadcasted": metricsTick,
+                            "meshPeers": Math.min(6, connectedPeers),
+                            "fanoutPeers": 0,
+                            "gossipsubPeers": connectedPeers
+                        })
+        }
         return {
             "connectedPeersMetric": connectedPeers,
             "openStreams": activeStreams,
@@ -167,7 +199,69 @@ QtObject {
             "discoveryServices": advertisedServices.length,
             "discoveryServicePeers": 0,
             "discoveryLookupRequests": 0,
-            "discoveryPeersFound": 0
+            "discoveryPeersFound": 0,
+            "trafficBytesReceived": mockBytesReceived,
+            "trafficBytesSent": mockBytesSent,
+            "trafficSessionBytesReceived": Math.max(0, mockBytesReceived - 1048576),
+            "trafficSessionBytesSent": Math.max(0, mockBytesSent - 524288),
+            "trafficReceiveRate": status === 2 && metricsTick > 0 ? 24576 : 0,
+            "trafficSendRate": status === 2 && metricsTick > 0 ? 12288 : 0,
+            "trafficPeakReceiveRate": metricsTick > 0 ? 24576 : 0,
+            "trafficPeakSendRate": metricsTick > 0 ? 12288 : 0,
+            "protobufBytesReceived": metricsTick * 4096,
+            "protobufBytesSent": metricsTick * 2048,
+            "protobufMessagesReceived": metricsTick * 16,
+            "protobufMessagesSent": metricsTick * 8,
+            "protobufAverageBytesReceived": 256,
+            "protobufAverageBytesSent": 256,
+            "dialAttempts": Math.max(connectedPeers, 1),
+            "dialSuccesses": connectedPeers,
+            "dialFailures": connectedPeers > 0 ? 0 : 1,
+            "dialSuccessRate": connectedPeers > 0 ? 100 : 0,
+            "dialLatencyP50Ms": 100,
+            "dialLatencyP95Ms": 500,
+            "dialLatencyP99Ms": 1000,
+            "dialLatencyAvailable": connectedPeers > 0,
+            "failedUpgradesInbound": 0,
+            "failedUpgradesOutbound": 0,
+            "connectionManagerTrims": 0,
+            "connectionManagerPrunedPeers": 0,
+            "autonatReachability": nodeConfig.autonat ? "Reachable" : "Unknown",
+            "autonatConfidence": nodeConfig.autonat ? 0.8 : 0,
+            "autonatV2Reachability": nodeConfig.autonatV2 ? "Reachable" : "Unknown",
+            "autonatV2Confidence": nodeConfig.autonatV2 ? 0.8 : 0,
+            "relayReservationsActive": relayReservations,
+            "relayCircuitsActive": 0,
+            "relayBytesReceived": 0,
+            "relayBytesSent": 0,
+            "nodeUptimeSeconds": startedAtMs > 0 ? Math.floor((Date.now() - startedAtMs) / 1000) : 0,
+            "lastMetricsUpdateMs": Date.now(),
+            "availableMetrics": ["libp2p_network_bytes", "libp2p_protobuf_bytes_received", "libp2p_protobuf_bytes_sent", "libp2p_protobuf_messages_received", "libp2p_protobuf_messages_sent"],
+            "metricSeries": [],
+            "trafficHistory": metricHistory,
+            "protobufByKind": metricsTick > 0 ? [{ "kind": "PeerRecord", "bytesReceived": metricsTick * 4096, "bytesSent": metricsTick * 2048, "messagesReceived": metricsTick * 16, "messagesSent": metricsTick * 8 }] : [],
+            "trafficByProtocol": [],
+            "trafficByAgent": [],
+            "streamsByProtocol": activeStreams > 0 ? [{ "protocol": "/ipfs/ping/1.0.0", "inbound": 0, "outbound": activeStreams, "total": activeStreams, "rejections": 0 }] : [],
+            "gossipsubByTopic": topics,
+            "gossipsubDuplicates": 0,
+            "gossipsubValidationFailures": 0,
+            "gossipsubNoPeerTopics": topics.length > 0 && connectedPeers === 0 ? topics.length : 0,
+            "gossipsubLowPeerTopics": 0,
+            "gossipsubHealthyTopics": connectedPeers > 0 ? topics.length : 0,
+            "gossipsubRateLimitHits": 0,
+            "dhtMessagesByType": [],
+            "dhtBucketSizes": [],
+            "dhtRoutingInsertions": 0,
+            "dhtRoutingReplacements": 0,
+            "dhtRoutingEvictions": 0,
+            "dhtLivenessSuccesses": 0,
+            "dhtLivenessFailures": 0,
+            "discoveryMessagesByType": [],
+            "discoveryExpiredAdvertisements": 0,
+            "discoveryServiceTables": 0,
+            "discoveryPendingActions": 0,
+            "discoveryActionsExecuted": 0
         }
     }
 
@@ -231,8 +325,27 @@ QtObject {
     }
 
     function refreshMetrics() {
+        if (status === 2) {
+            ++metricsTick
+            mockBytesReceived += 24576 * Math.max(1, metricsRefreshIntervalMs / 1000)
+            mockBytesSent += 12288 * Math.max(1, metricsRefreshIntervalMs / 1000)
+            var history = metricHistory.slice()
+            history.push({
+                             "timestampMs": Date.now(),
+                             "bytesReceived": mockBytesReceived,
+                             "bytesSent": mockBytesSent,
+                             "receiveRate": 24576,
+                             "sendRate": 12288,
+                             "peers": connectedPeers,
+                             "streams": activeStreams
+                         })
+            while (history.length > 360)
+                history.shift()
+            metricHistory = history
+        }
         var values = defaultMetrics()
         values.connectedPeersMetric = connectedPeers
+        values.trafficHistory = metricHistory
         metrics = values
         metricsUpdated(values)
     }

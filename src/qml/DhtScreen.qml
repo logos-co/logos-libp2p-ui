@@ -11,6 +11,8 @@ Item {
     readonly property bool featureEnabled: !backend || !backend.nodeConfig || backend.nodeConfig.mountKad !== false
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     readonly property var results: backend && backend.dhtLookupResults !== undefined ? backend.dhtLookupResults : []
+    readonly property var messageTypes: metrics.dhtMessagesByType || []
+    readonly property var bucketSizes: metrics.dhtBucketSizes || []
     property string successMessage: ""
 
     function metric(name) {
@@ -23,13 +25,6 @@ Item {
     }
 
     Component.onCompleted: refresh()
-
-    Timer {
-        interval: root.backend && root.backend.metricsRefreshIntervalMs > 0 ? root.backend.metricsRefreshIntervalMs : 5000
-        repeat: true
-        running: root.visible && root.running && root.featureEnabled && root.backend.metricsRefreshIntervalMs > 0
-        onTriggered: root.refresh()
-    }
 
     LogosScrollView {
         id: scroll
@@ -104,6 +99,63 @@ Item {
                     title: "Estimated network"
                     value: root.metric("dhtNetworkSizeEstimate")
                     iconSource: "assets/dht.svg"
+                }
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width > 850 ? 4 : width > 500 ? 2 : 1
+                columnSpacing: Theme.spacing.medium; rowSpacing: Theme.spacing.medium
+                StatCard { Layout.fillWidth: true; title: "Insertions"; value: root.metric("dhtRoutingInsertions"); iconSource: "assets/dht.svg" }
+                StatCard { Layout.fillWidth: true; title: "Replacements"; value: root.metric("dhtRoutingReplacements"); iconSource: "assets/dht.svg" }
+                StatCard { Layout.fillWidth: true; title: "Evictions"; value: root.metric("dhtRoutingEvictions"); iconSource: "assets/dht.svg" }
+                StatCard { Layout.fillWidth: true; title: "Liveness failures"; value: root.metric("dhtLivenessFailures"); iconSource: "assets/dht.svg" }
+                StatCard { Layout.fillWidth: true; title: "Lookup follow-ups"; value: root.metric("dhtLookupFollowups"); iconSource: "assets/dht.svg" }
+                StatCard { Layout.fillWidth: true; title: "Provider rejections"; value: root.metric("dhtProviderRejections"); iconSource: "assets/dht.svg" }
+                StatCard { Layout.fillWidth: true; title: "Republished regions"; value: root.metric("dhtRepublishedRegions"); iconSource: "assets/dht.svg" }
+                StatCard { Layout.fillWidth: true; title: "Republished keys"; value: root.metric("dhtRepublishedKeys"); iconSource: "assets/dht.svg" }
+            }
+
+            LogosFrame {
+                Layout.fillWidth: true
+                visible: root.messageTypes.length > 0
+                backgroundColor: Theme.palette.backgroundSecondary; borderColor: Theme.palette.borderSecondary; radius: Theme.spacing.radiusLarge; padding: Theme.spacing.large
+                ColumnLayout {
+                    anchors.fill: parent; spacing: Theme.spacing.small
+                    LogosText { text: "DHT messages by operation"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
+                    Repeater {
+                        model: root.messageTypes
+                        Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true; implicitHeight: 44; radius: Theme.spacing.radiusSmall; color: Theme.palette.background
+                            RowLayout {
+                                anchors.fill: parent; anchors.margins: Theme.spacing.small
+                                LogosText { Layout.fillWidth: true; text: modelData.type; color: Theme.palette.text }
+                                LogosText { text: "Messages ↓ " + (modelData.messagesReceived || 0) + " ↑ " + (modelData.messagesSent || 0); color: Theme.palette.textSecondary }
+                                LogosText { text: "Bytes ↓ " + (modelData.bytesReceived || 0) + " ↑ " + (modelData.bytesSent || 0); color: Theme.palette.textSecondary }
+                            }
+                        }
+                    }
+                }
+            }
+
+            LogosFrame {
+                Layout.fillWidth: true
+                visible: root.bucketSizes.length > 0
+                backgroundColor: Theme.palette.backgroundSecondary; borderColor: Theme.palette.borderSecondary; radius: Theme.spacing.radiusLarge; padding: Theme.spacing.large
+                ColumnLayout {
+                    anchors.fill: parent; spacing: Theme.spacing.small
+                    LogosText { text: "Routing bucket occupancy"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
+                    Repeater {
+                        model: root.bucketSizes
+                        RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            LogosText { Layout.preferredWidth: 120; text: "Bucket " + modelData.bucket; color: Theme.palette.textSecondary }
+                            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 8; radius: 4; color: Theme.palette.backgroundMuted; Rectangle { height: parent.height; radius: parent.radius; color: Theme.palette.success; width: parent.width * Math.min(1, Number(modelData.peers || 0) / 20) } }
+                            LogosText { text: modelData.peers; color: Theme.palette.text }
+                        }
+                    }
                 }
             }
 

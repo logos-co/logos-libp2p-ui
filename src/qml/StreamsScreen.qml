@@ -10,18 +10,13 @@ Item {
     readonly property bool running: backend && backend.status === 2
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     readonly property var ping: backend && backend.lastPingResult !== undefined ? backend.lastPingResult : ({})
+    readonly property var protocolRows: metrics.streamsByProtocol || []
+    readonly property var history: metrics.trafficHistory || []
     property string successMessage: ""
 
     function metric(name) { return metrics[name] === undefined ? 0 : metrics[name] }
     function refresh() { if (backend) backend.refreshMetrics() }
     Component.onCompleted: refresh()
-
-    Timer {
-        interval: root.backend && root.backend.metricsRefreshIntervalMs > 0 ? root.backend.metricsRefreshIntervalMs : 5000
-        repeat: true
-        running: root.visible && root.running && root.backend.metricsRefreshIntervalMs > 0
-        onTriggered: root.refresh()
-    }
 
     LogosScrollView {
         id: scroll
@@ -47,6 +42,53 @@ Item {
                 StatCard { Layout.fillWidth: true; title: "Inbound streams"; value: root.metric("openInboundStreams"); iconSource: "assets/streams.svg" }
                 StatCard { Layout.fillWidth: true; title: "Outbound streams"; value: root.metric("openOutboundStreams"); iconSource: "assets/streams.svg" }
                 StatCard { Layout.fillWidth: true; title: "Cap rejections"; value: root.metric("streamCapRejections"); iconSource: "assets/streams.svg" }
+            }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width > 850 ? 4 : width > 500 ? 2 : 1
+                columnSpacing: Theme.spacing.medium; rowSpacing: Theme.spacing.medium
+                StatCard { Layout.fillWidth: true; title: "Opened"; value: root.metric("streamsOpened"); iconSource: "assets/streams.svg" }
+                StatCard { Layout.fillWidth: true; title: "Closed"; value: root.metric("streamsClosed"); iconSource: "assets/streams.svg" }
+                StatCard { Layout.fillWidth: true; title: "Resets"; value: root.metric("streamResets"); iconSource: "assets/streams.svg" }
+                StatCard { Layout.fillWidth: true; title: "Timeouts"; value: root.metric("streamTimeouts"); iconSource: "assets/streams.svg" }
+            }
+            LogosFrame {
+                Layout.fillWidth: true
+                backgroundColor: Theme.palette.backgroundSecondary
+                borderColor: Theme.palette.borderSecondary
+                radius: Theme.spacing.radiusLarge
+                padding: Theme.spacing.large
+                ColumnLayout {
+                    anchors.fill: parent; spacing: Theme.spacing.medium
+                    LogosText { text: "Open streams over time"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
+                    MetricLineChart { Layout.fillWidth: true; history: root.history; firstField: "streams"; secondField: "unused"; firstColor: "#7C3AED"; windowMinutes: 15 }
+                }
+            }
+            LogosFrame {
+                Layout.fillWidth: true
+                backgroundColor: Theme.palette.backgroundSecondary
+                borderColor: Theme.palette.borderSecondary
+                radius: Theme.spacing.radiusLarge
+                padding: Theme.spacing.large
+                ColumnLayout {
+                    anchors.fill: parent; spacing: Theme.spacing.small
+                    LogosText { text: "Streams by protocol"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
+                    LogosText { Layout.fillWidth: true; visible: root.protocolRows.length === 0; text: "No labeled protocol streams are currently open."; color: Theme.palette.textTertiary }
+                    Repeater {
+                        model: root.protocolRows
+                        Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true; implicitHeight: 42; radius: Theme.spacing.radiusSmall; color: Theme.palette.background
+                            RowLayout {
+                                anchors.fill: parent; anchors.margins: Theme.spacing.small
+                                LogosText { Layout.fillWidth: true; text: modelData.protocol; color: Theme.palette.text; elide: Text.ElideMiddle }
+                                LogosText { text: "In " + (modelData.inbound || 0); color: Theme.palette.textSecondary }
+                                LogosText { text: "Out " + (modelData.outbound || 0); color: Theme.palette.textSecondary }
+                                LogosText { text: "Rejected " + (modelData.rejections || 0); color: (modelData.rejections || 0) > 0 ? Theme.palette.warning : Theme.palette.textSecondary }
+                            }
+                        }
+                    }
+                }
             }
             LogosFrame {
                 Layout.fillWidth: true
