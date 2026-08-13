@@ -8,6 +8,8 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QMap>
+#include <QPointer>
+#include <QRegularExpression>
 #include <QSet>
 #include <QStringList>
 #include <QDateTime>
@@ -97,6 +99,13 @@ Libp2pBackend::Libp2pBackend(LogosAPI* logosAPI, QObject* parent) : Libp2pBacken
     setMetrics(QVariantMap{});
     setLastPingResult(QVariantMap{});
     setDhtLookupResults(QVariantList{});
+    setDhtValueResult(QVariantMap{});
+    setDhtProviderResults(QVariantList{});
+    setDhtProvidedCids(QVariantList{});
+    setDhtResolvedPeer(QVariantMap{});
+    setDhtRandomRecords(QVariantList{});
+    setDhtOperationState(QVariantMap{{QStringLiteral("busy"), false}});
+    setDhtOperationHistory(QVariantList{});
     setAdvertisedServices(QVariantList{});
     setDiscoveryResults(QVariantList{});
     setNodeConfig(QVariantMap{});
@@ -131,6 +140,52 @@ Libp2pBackend::~Libp2pBackend() {
 void Libp2pBackend::reportError(const QString& message) {
     qWarning() << "Libp2pBackend:" << message;
     emit error(message);
+}
+
+bool Libp2pBackend::beginDhtOperation(const QString& operation, const QString& target) {
+    if (!ensureRunning(operation) || !nodeConfig().value(QStringLiteral("mountKad"), true).toBool()) {
+        if (status() == Running)
+            reportError(QStringLiteral("Kademlia DHT is disabled."));
+        return false;
+    }
+    if (dhtOperationState().value(QStringLiteral("busy")).toBool()) {
+        reportError(QStringLiteral("Another DHT operation is already running."));
+        return false;
+    }
+
+    m_dhtOperationTimer.restart();
+    setDhtOperationState(QVariantMap{
+        {QStringLiteral("busy"), true},
+        {QStringLiteral("operation"), operation},
+        {QStringLiteral("target"), target},
+        {QStringLiteral("startedAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)}
+    });
+    return true;
+}
+
+void Libp2pBackend::finishDhtOperation(const QString& operation, const QString& target,
+                                       bool success, const QString& message) {
+    const qint64 durationMs = m_dhtOperationTimer.isValid() ? m_dhtOperationTimer.elapsed() : 0;
+    QVariantMap state{
+        {QStringLiteral("busy"), false},
+        {QStringLiteral("operation"), operation},
+        {QStringLiteral("target"), target},
+        {QStringLiteral("success"), success},
+        {QStringLiteral("message"), message},
+        {QStringLiteral("durationMs"), durationMs}
+    };
+    setDhtOperationState(state);
+
+    QVariantList history = dhtOperationHistory();
+    state.insert(QStringLiteral("timestamp"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    history.prepend(state);
+    while (history.size() > 30)
+        history.removeLast();
+    setDhtOperationHistory(history);
+
+    if (!success)
+        reportError(message);
+    emit dhtOperationCompleted(operation);
 }
 
 QJsonDocument Libp2pBackend::defaultConfig() {
@@ -1171,22 +1226,339 @@ void Libp2pBackend::pingPeer(QString peerId) {
 
 void Libp2pBackend::dhtFindPeer(QString peerId) {
     peerId = peerId.trimmed();
-    if (!ensureRunning(QStringLiteral("look up a DHT peer"))) {
-        return;
-    }
     if (peerId.isEmpty()) {
         reportError(QStringLiteral("A peer ID is required for DHT lookup."));
         return;
     }
+    const QString operation = QStringLiteral("Find closest peers");
+    if (!beginDhtOperation(operation, peerId))
+        return;
 
-    LogosResult result = m_logos->libp2p_module.kadFindNode(peerId);
-    if (!result.success) {
-        reportError(QStringLiteral("DHT lookup failed for '%1': %2").arg(peerId, result.getError()));
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadFindNodeAsync(peerId, [self, operation, peerId](LogosResult result) {
+        if (!self)
+            return;
+        if (!result.success) {
+            self->finishDhtOperation(operation, peerId, false,
+                QStringLiteral("DHT lookup failed for '%1': %2").arg(peerId, result.getError()));
+            return;
+        }
+        self->setDhtLookupResults(result.getList());
+        self->refreshMetrics();
+        self->finishDhtOperation(operation, peerId, true,
+            QStringLiteral("Found %1 closest peer(s).").arg(result.getList().size()));
+        emit self->dhtLookupCompleted(peerId);
+    });
+}
+
+void Libp2pBackend::dhtResolvePeer(QString peerId) {
+    peerId = peerId.trimmed();
+    if (peerId.isEmpty()) {
+        reportError(QStringLiteral("A peer ID is required for peer resolution."));
         return;
     }
-    setDhtLookupResults(result.getList());
-    refreshMetrics();
-    emit dhtLookupCompleted(peerId);
+    const QString operation = QStringLiteral("Resolve peer");
+    if (!beginDhtOperation(operation, peerId))
+        return;
+
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadFindNodeAsync(peerId, [self, operation, peerId](LogosResult lookup) {
+        if (!self)
+            return;
+        if (!lookup.success) {
+            self->finishDhtOperation(operation, peerId, false,
+                QStringLiteral("Peer resolution failed for '%1': %2").arg(peerId, lookup.getError()));
+            return;
+        }
+        self->m_logos->libp2p_module.peerstoreGetPeerInfoAsync(peerId,
+            [self, operation, peerId](LogosResult info) {
+                if (!self)
+                    return;
+                if (!info.success) {
+                    self->finishDhtOperation(operation, peerId, false,
+                        QStringLiteral("The DHT walk completed, but no addresses were found for '%1': %2")
+                            .arg(peerId, info.getError()));
+                    return;
+                }
+                self->setDhtResolvedPeer(info.getMap());
+                self->finishDhtOperation(operation, peerId, true, QStringLiteral("Peer resolved."));
+            });
+    });
+}
+
+void Libp2pBackend::dhtPutValue(QString key, QString value, QString encoding) {
+    key = key.trimmed();
+    encoding = encoding.trimmed().toLower();
+    if (key.isEmpty()) {
+        reportError(QStringLiteral("A key is required to put a DHT value."));
+        return;
+    }
+
+    QByteArray bytes;
+    if (encoding == QStringLiteral("base64")) {
+        const QByteArray encoded = value.trimmed().toUtf8();
+        static const QRegularExpression base64Pattern(
+            QStringLiteral("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"));
+        if (!base64Pattern.match(QString::fromLatin1(encoded)).hasMatch()) {
+            reportError(QStringLiteral("The value is not valid Base64."));
+            return;
+        }
+        bytes = QByteArray::fromBase64(encoded);
+    } else if (encoding == QStringLiteral("hex")) {
+        const QString encoded = value.trimmed();
+        static const QRegularExpression hexPattern(QStringLiteral("^(?:[0-9a-fA-F]{2})*$"));
+        if (!hexPattern.match(encoded).hasMatch()) {
+            reportError(QStringLiteral("The value must contain an even number of hexadecimal characters."));
+            return;
+        }
+        bytes = QByteArray::fromHex(encoded.toLatin1());
+    } else {
+        bytes = value.toUtf8();
+        encoding = QStringLiteral("utf-8");
+    }
+    const QString wireValue = QString::fromUtf8(bytes);
+    if (wireValue.toUtf8() != bytes) {
+        reportError(QStringLiteral("This module interface currently accepts UTF-8 values only; the decoded bytes are not valid UTF-8."));
+        return;
+    }
+
+    const QString operation = QStringLiteral("Put value");
+    if (!beginDhtOperation(operation, key))
+        return;
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadPutValueAsync(key, wireValue,
+        [self, operation, key, bytes, encoding](LogosResult result) {
+            if (!self)
+                return;
+            if (!result.success) {
+                self->finishDhtOperation(operation, key, false,
+                    QStringLiteral("Failed to put value for '%1': %2").arg(key, result.getError()));
+                return;
+            }
+            self->setDhtValueResult(QVariantMap{
+                {QStringLiteral("kind"), QStringLiteral("put")},
+                {QStringLiteral("key"), key},
+                {QStringLiteral("encoding"), encoding},
+                {QStringLiteral("size"), bytes.size()},
+                {QStringLiteral("base64"), QString::fromLatin1(bytes.toBase64())}
+            });
+            self->refreshMetrics();
+            self->finishDhtOperation(operation, key, true,
+                QStringLiteral("Stored %1 byte(s).").arg(bytes.size()));
+        });
+}
+
+void Libp2pBackend::dhtGetValue(QString key, int quorum) {
+    key = key.trimmed();
+    if (key.isEmpty()) {
+        reportError(QStringLiteral("A key is required to get a DHT value."));
+        return;
+    }
+    if (quorum == 0) {
+        reportError(QStringLiteral("Quorum must be at least 1, or -1 for the configured default."));
+        return;
+    }
+    const QString operation = QStringLiteral("Get value");
+    if (!beginDhtOperation(operation, key))
+        return;
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadGetValueAsync(key, quorum, [self, operation, key, quorum](LogosResult result) {
+        if (!self)
+            return;
+        if (!result.success) {
+            self->finishDhtOperation(operation, key, false,
+                QStringLiteral("Failed to get value for '%1': %2").arg(key, result.getError()));
+            return;
+        }
+        const QString base64 = result.getString();
+        const QByteArray bytes = QByteArray::fromBase64(base64.toUtf8());
+        const QString text = QString::fromUtf8(bytes);
+        const bool validUtf8 = text.toUtf8() == bytes;
+        self->setDhtValueResult(QVariantMap{
+            {QStringLiteral("kind"), QStringLiteral("get")},
+            {QStringLiteral("key"), key},
+            {QStringLiteral("quorum"), quorum},
+            {QStringLiteral("size"), bytes.size()},
+            {QStringLiteral("base64"), base64},
+            {QStringLiteral("text"), validUtf8 ? text : QString()},
+            {QStringLiteral("validUtf8"), validUtf8}
+        });
+        self->refreshMetrics();
+        self->finishDhtOperation(operation, key, true,
+            QStringLiteral("Retrieved %1 byte(s).").arg(bytes.size()));
+    });
+}
+
+void Libp2pBackend::dhtCreateCid(QString key) {
+    key = key.trimmed();
+    if (key.isEmpty()) {
+        reportError(QStringLiteral("Text is required to generate a CID."));
+        return;
+    }
+    const QString operation = QStringLiteral("Generate CID");
+    if (!beginDhtOperation(operation, key))
+        return;
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.toCidAsync(key, [self, operation, key](LogosResult result) {
+        if (!self)
+            return;
+        if (!result.success) {
+            self->finishDhtOperation(operation, key, false,
+                QStringLiteral("Failed to generate CID: %1").arg(result.getError()));
+            return;
+        }
+        self->setDhtValueResult(QVariantMap{
+            {QStringLiteral("kind"), QStringLiteral("cid")},
+            {QStringLiteral("key"), key},
+            {QStringLiteral("cid"), result.getString()}
+        });
+        self->finishDhtOperation(operation, key, true, QStringLiteral("CID generated."));
+    });
+}
+
+void Libp2pBackend::dhtAddProvider(QString cid) {
+    cid = cid.trimmed();
+    if (cid.isEmpty()) {
+        reportError(QStringLiteral("A CID is required to announce a provider."));
+        return;
+    }
+    const QString operation = QStringLiteral("Announce once");
+    if (!beginDhtOperation(operation, cid))
+        return;
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadAddProviderAsync(cid, [self, operation, cid](LogosResult result) {
+        if (!self)
+            return;
+        self->finishDhtOperation(operation, cid, result.success,
+            result.success ? QStringLiteral("Provider record announced once.")
+                           : QStringLiteral("Provider announcement failed: %1").arg(result.getError()));
+    });
+}
+
+void Libp2pBackend::dhtStartProviding(QString cid) {
+    cid = cid.trimmed();
+    if (cid.isEmpty()) {
+        reportError(QStringLiteral("A CID is required to start providing."));
+        return;
+    }
+    const QString operation = QStringLiteral("Start providing");
+    if (!beginDhtOperation(operation, cid))
+        return;
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadStartProvidingAsync(cid, [self, operation, cid](LogosResult result) {
+        if (!self)
+            return;
+        if (result.success) {
+            QVariantList provided = self->dhtProvidedCids();
+            if (!provided.contains(cid)) {
+                provided.append(cid);
+                self->setDhtProvidedCids(provided);
+            }
+        }
+        self->finishDhtOperation(operation, cid, result.success,
+            result.success ? QStringLiteral("This node will keep announcing the CID.")
+                           : QStringLiteral("Failed to start providing: %1").arg(result.getError()));
+    });
+}
+
+void Libp2pBackend::dhtStopProviding(QString cid) {
+    cid = cid.trimmed();
+    if (cid.isEmpty()) {
+        reportError(QStringLiteral("A CID is required to stop providing."));
+        return;
+    }
+    const QString operation = QStringLiteral("Stop providing");
+    if (!beginDhtOperation(operation, cid))
+        return;
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadStopProvidingAsync(cid, [self, operation, cid](LogosResult result) {
+        if (!self)
+            return;
+        if (result.success) {
+            QVariantList provided = self->dhtProvidedCids();
+            provided.removeAll(cid);
+            self->setDhtProvidedCids(provided);
+        }
+        self->finishDhtOperation(operation, cid, result.success,
+            result.success ? QStringLiteral("Future provider re-announcements stopped; remote records may remain until expiry.")
+                           : QStringLiteral("Failed to stop providing: %1").arg(result.getError()));
+    });
+}
+
+void Libp2pBackend::dhtGetProviders(QString cid) {
+    cid = cid.trimmed();
+    if (cid.isEmpty()) {
+        reportError(QStringLiteral("A CID is required to find providers."));
+        return;
+    }
+    const QString operation = QStringLiteral("Find providers");
+    if (!beginDhtOperation(operation, cid))
+        return;
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadGetProvidersAsync(cid, [self, operation, cid](LogosResult result) {
+        if (!self)
+            return;
+        if (!result.success) {
+            self->finishDhtOperation(operation, cid, false,
+                QStringLiteral("Provider lookup failed: %1").arg(result.getError()));
+            return;
+        }
+        self->setDhtProviderResults(result.getList());
+        self->refreshMetrics();
+        self->finishDhtOperation(operation, cid, true,
+            QStringLiteral("Found %1 provider(s).").arg(result.getList().size()));
+    });
+}
+
+void Libp2pBackend::dhtGetRandomRecords() {
+    const QString operation = QStringLiteral("Random discovery records");
+    if (!beginDhtOperation(operation))
+        return;
+    if (!nodeConfig().value(QStringLiteral("mountServiceDiscovery"), true).toBool()) {
+        finishDhtOperation(operation, QString(), false,
+            QStringLiteral("Service discovery must be enabled for random extended-record lookup."));
+        return;
+    }
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadGetRandomRecordsAsync([self, operation](LogosResult result) {
+        if (!self)
+            return;
+        if (!result.success) {
+            self->finishDhtOperation(operation, QString(), false,
+                QStringLiteral("Random record lookup failed: %1").arg(result.getError()));
+            return;
+        }
+        self->setDhtRandomRecords(result.getList());
+        self->finishDhtOperation(operation, QString(), true,
+            QStringLiteral("Found %1 extended record(s).").arg(result.getList().size()));
+    });
+}
+
+void Libp2pBackend::dhtRefreshRouting() {
+    const QString target = peerId();
+    const QString operation = QStringLiteral("Refresh routing table");
+    if (target.isEmpty()) {
+        reportError(QStringLiteral("The local peer ID is not available yet."));
+        return;
+    }
+    if (!beginDhtOperation(operation, target))
+        return;
+    QPointer<Libp2pBackend> self(this);
+    m_logos->libp2p_module.kadFindNodeAsync(target, [self, operation, target](LogosResult result) {
+        if (!self)
+            return;
+        if (result.success) {
+            self->setDhtLookupResults(result.getList());
+            self->refreshMetrics();
+        }
+        self->finishDhtOperation(operation, target, result.success,
+            result.success ? QStringLiteral("Routing-table lookup completed.")
+                           : QStringLiteral("Routing refresh failed: %1").arg(result.getError()));
+    });
+}
+
+void Libp2pBackend::clearDhtOperationHistory() {
+    setDhtOperationHistory(QVariantList{});
 }
 
 void Libp2pBackend::serviceDiscoveryAdvertise(QString serviceId, QString serviceData) {
@@ -1377,6 +1749,13 @@ void Libp2pBackend::clearRuntimeInfo() {
     setMetrics(QVariantMap{});
     setLastPingResult(QVariantMap{});
     setDhtLookupResults(QVariantList{});
+    setDhtValueResult(QVariantMap{});
+    setDhtProviderResults(QVariantList{});
+    setDhtProvidedCids(QVariantList{});
+    setDhtResolvedPeer(QVariantMap{});
+    setDhtRandomRecords(QVariantList{});
+    setDhtOperationState(QVariantMap{{QStringLiteral("busy"), false}});
+    setDhtOperationHistory(QVariantList{});
     setAdvertisedServices(QVariantList{});
     setDiscoveryResults(QVariantList{});
     m_serviceDiscoveryStarted = false;
