@@ -2,12 +2,14 @@ import QtQuick
 import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
+import "InputValidation.js" as InputValidation
 
 Item {
     id: root
 
     property var backend: null
     readonly property bool running: backend && backend.status === 2
+
     readonly property bool featureEnabled: !backend || !backend.nodeConfig || backend.nodeConfig.mountKad !== false
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     readonly property var results: backend && backend.dhtLookupResults !== undefined ? backend.dhtLookupResults : []
@@ -191,9 +193,18 @@ Item {
                         LogosButton {
                             text: "Find"
                             variant: LogosButton.Variant.Primary
-                            enabled: root.running && root.featureEnabled && peerIdField.text.trim().length > 0
-                            onClicked: root.backend.dhtFindPeer(peerIdField.text)
+                            enabled: root.running && root.featureEnabled && InputValidation.isPeerId(peerIdField.text)
+                            onClicked: root.backend.dhtFindPeer(peerIdField.text.trim())
                         }
+                    }
+
+                    LogosText {
+                        Layout.fillWidth: true
+                        visible: peerIdField.text.trim().length > 0 && !InputValidation.isPeerId(peerIdField.text)
+                        text: "Enter a valid base58 or CIDv1 libp2p peer ID."
+                        font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.warning
+                        wrapMode: Text.Wrap
                     }
 
                     LogosText {
