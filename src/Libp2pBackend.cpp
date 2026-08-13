@@ -1,6 +1,7 @@
 #include "Libp2pBackend.h"
 
 #include <QByteArray>
+#include <QChar>
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QJsonArray>
@@ -48,6 +49,30 @@ bool normalizeStringArray(const QJsonValue& value, QJsonArray* output, const QSt
 
 bool isAllowedMetricsRefreshInterval(int intervalMs) {
     return intervalMs == 0 || intervalMs == 5000 || intervalMs == 10000 || intervalMs == 30000;
+}
+
+bool normalizePrivateKey(const QJsonValue& value, QString* output, QString* error) {
+    if (!value.isString()) {
+        *error = QStringLiteral("privKey must be a hex-encoded string.");
+        return false;
+    }
+
+    const QString key = value.toString().trimmed();
+    if (key.isEmpty() || key.size() % 2 != 0) {
+        *error = QStringLiteral("privKey must contain an even number of hexadecimal characters.");
+        return false;
+    }
+    for (const QChar character : key) {
+        if (!((character >= QLatin1Char('0') && character <= QLatin1Char('9'))
+              || (character >= QLatin1Char('a') && character <= QLatin1Char('f'))
+              || (character >= QLatin1Char('A') && character <= QLatin1Char('F')))) {
+            *error = QStringLiteral("privKey must contain only hexadecimal characters.");
+            return false;
+        }
+    }
+
+    *output = key;
+    return true;
 }
 
 QJsonValue valueOrDefault(const QJsonObject& object, const QString& key, const QJsonObject& defaults) {
@@ -163,6 +188,14 @@ bool Libp2pBackend::canonicalizeConfig(const QJsonDocument& input, QJsonDocument
         return false;
     }
     normalized["transport"] = transport;
+
+    if (source.contains(QStringLiteral("privKey"))) {
+        QString privateKey;
+        if (!normalizePrivateKey(source.value(QStringLiteral("privKey")), &privateKey, error)) {
+            return false;
+        }
+        normalized["privKey"] = privateKey;
+    }
 
     const QStringList limitKeys{
         QStringLiteral("maxConnections"),
@@ -1265,6 +1298,22 @@ void Libp2pBackend::applyNodeConfig(QVariantMap config) {
         return;
     }
     emit nodeConfigApplied();
+}
+
+void Libp2pBackend::applyNodeConfigAndStart(QVariantMap config) {
+    QJsonDocument normalized;
+    QString error;
+    if (!canonicalizeConfig(config, &normalized, &error)) {
+        reportError(QStringLiteral("Invalid node configuration: %1").arg(error));
+        return;
+    }
+    if (!initializeConfig(normalized, true, &error)) {
+        reportError(error);
+        return;
+    }
+
+    emit nodeConfigApplied();
+    start();
 }
 
 void Libp2pBackend::restoreDefaultNodeConfig() {

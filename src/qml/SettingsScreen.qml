@@ -50,6 +50,7 @@ Item {
         loading = true
         var config = backend.nodeConfig || ({})
         listenAddresses.text = (config.addrs || []).join("\n")
+        privateKey.text = config.privKey || ""
         transport.currentIndex = config.transport === "quic" ? 1 : 0
         maxConnections.value = config.maxConnections || 50
         maxInboundConnections.value = config.maxInConnections || 25
@@ -84,7 +85,7 @@ Item {
             var node = bootstrapNodes.get(index)
             nodes.push({ "peerId": node.peerId.trim(), "addrs": lines(node.addrsText) })
         }
-        return {
+        var config = {
             "addrs": lines(listenAddresses.text),
             "transport": transport.currentIndex === 1 ? "quic" : "tcp",
             "maxConnections": maxConnections.value,
@@ -102,10 +103,21 @@ Item {
             "circuitRelayClient": circuitRelayClient.checked,
             "bootstrapNodes": nodes
         }
+        var key = privateKey.text.trim()
+        if (key.length > 0)
+            config.privKey = key
+        return config
+    }
+
+    function validPrivateKey() {
+        var key = privateKey.text.trim()
+        return key.length === 0 || (key.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(key))
     }
 
     function validDraft() {
         if (lines(listenAddresses.text).length === 0)
+            return false
+        if (!validPrivateKey())
             return false
         for (var index = 0; index < bootstrapNodes.count; ++index) {
             var node = bootstrapNodes.get(index)
@@ -118,6 +130,11 @@ Item {
     function apply() {
         if (backend)
             backend.applyNodeConfig(draftConfig())
+    }
+
+    function applyAndStart() {
+        if (backend)
+            backend.applyNodeConfigAndStart(draftConfig())
     }
 
     function copyJson() {
@@ -179,6 +196,13 @@ Item {
                     enabled: root.backend && root.backend.settingsEditable && root.dirty && root.validDraft()
                     onClicked: root.apply()
                 }
+
+                LogosButton {
+                    text: "Apply & start"
+                    variant: LogosButton.Variant.Primary
+                    enabled: root.backend && root.backend.settingsEditable && root.validDraft()
+                    onClicked: root.applyAndStart()
+                }
             }
 
             LogosText {
@@ -230,6 +254,29 @@ Item {
                         enabled: root.backend && root.backend.settingsEditable
                         placeholderText: "/ip4/127.0.0.1/tcp/0"
                         onTextChanged: root.markDirty()
+                    }
+
+                    LogosText {
+                        text: "Private key (optional)"
+                        font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.textSecondary
+                    }
+
+                    LogosTextField {
+                        id: privateKey
+                        Layout.fillWidth: true
+                        enabled: root.backend && root.backend.settingsEditable
+                        placeholderText: "Hex-encoded raw private key"
+                        echoMode: TextInput.Password
+                        onTextChanged: root.markDirty()
+                    }
+
+                    LogosText {
+                        Layout.fillWidth: true
+                        text: "Use a hex-encoded raw private key to keep the same peer identity across restarts. Leave empty to generate a new identity."
+                        font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.textTertiary
+                        wrapMode: Text.Wrap
                     }
 
                     RowLayout {

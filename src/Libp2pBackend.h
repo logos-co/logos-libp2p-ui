@@ -38,6 +38,7 @@ class Libp2pBackend : public Libp2pBackendSimpleSource {
     void serviceDiscoveryStopAdvertising(QString serviceId) override;
     void serviceDiscoveryLookup(QString serviceId, QString serviceData) override;
     void applyNodeConfig(QVariantMap config) override;
+    void applyNodeConfigAndStart(QVariantMap config) override;
     void restoreDefaultNodeConfig() override;
     void setMetricsRefreshInterval(int intervalMs) override;
     QString defaultConfigJson() override;

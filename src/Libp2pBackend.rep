@@ -50,6 +50,7 @@ class Libp2pBackend
     SLOT(void serviceDiscoveryStopAdvertising(QString serviceId))
     SLOT(void serviceDiscoveryLookup(QString serviceId, QString serviceData))
     SLOT(void applyNodeConfig(QVariantMap config))
+    SLOT(void applyNodeConfigAndStart(QVariantMap config))
     SLOT(void restoreDefaultNodeConfig())
     SLOT(void setMetricsRefreshInterval(int intervalMs))
     SLOT(QString defaultConfigJson())
