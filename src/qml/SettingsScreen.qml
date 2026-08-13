@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
+import "InputValidation.js" as InputValidation
 
 Item {
     id: root
@@ -111,29 +112,30 @@ Item {
 
     function validPrivateKey() {
         var key = privateKey.text.trim()
-        return key.length === 0 || (key.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(key))
+        return InputValidation.isOptionalPrivateKey(key)
     }
 
     function validDraft() {
-        if (lines(listenAddresses.text).length === 0)
+        if (!InputValidation.areMultiaddresses(lines(listenAddresses.text)))
             return false
         if (!validPrivateKey())
             return false
         for (var index = 0; index < bootstrapNodes.count; ++index) {
             var node = bootstrapNodes.get(index)
-            if (node.peerId.trim().length === 0 || lines(node.addrsText).length === 0)
+            if (!InputValidation.isPeerId(node.peerId)
+                    || !InputValidation.areMultiaddresses(lines(node.addrsText)))
                 return false
         }
         return true
     }
 
     function apply() {
-        if (backend)
+        if (backend && validDraft())
             backend.applyNodeConfig(draftConfig())
     }
 
     function applyAndStart() {
-        if (backend)
+        if (backend && validDraft())
             backend.applyNodeConfigAndStart(draftConfig())
     }
 
@@ -257,6 +259,16 @@ Item {
                     }
 
                     LogosText {
+                        Layout.fillWidth: true
+                        visible: listenAddresses.text.trim().length > 0
+                                 && !InputValidation.areMultiaddresses(root.lines(listenAddresses.text))
+                        text: "Enter valid IP/DNS multiaddresses with a TCP or UDP port."
+                        font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.warning
+                        wrapMode: Text.Wrap
+                    }
+
+                    LogosText {
                         text: "Private key (optional)"
                         font.pixelSize: Theme.typography.secondaryText
                         color: Theme.palette.textSecondary
@@ -269,6 +281,15 @@ Item {
                         placeholderText: "Hex-encoded raw private key"
                         echoMode: TextInput.Password
                         onTextChanged: root.markDirty()
+                    }
+
+                    LogosText {
+                        Layout.fillWidth: true
+                        visible: privateKey.text.trim().length > 0 && !root.validPrivateKey()
+                        text: "Private key must contain complete hexadecimal bytes (for example 0a0bff)."
+                        font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.warning
+                        wrapMode: Text.Wrap
                     }
 
                     LogosText {
@@ -335,6 +356,7 @@ Item {
                                 }
 
                                 LogosTextField {
+                                    id: bootstrapPeerId
                                     Layout.fillWidth: true
                                     enabled: root.backend && root.backend.settingsEditable
                                     placeholderText: "Peer ID"
@@ -345,7 +367,18 @@ Item {
                                     }
                                 }
 
+                                LogosText {
+                                    Layout.fillWidth: true
+                                    visible: bootstrapPeerId.text.trim().length > 0
+                                             && !InputValidation.isPeerId(bootstrapPeerId.text)
+                                    text: "Enter a valid base58 or CIDv1 libp2p peer ID."
+                                    font.pixelSize: Theme.typography.secondaryText
+                                    color: Theme.palette.warning
+                                    wrapMode: Text.Wrap
+                                }
+
                                 LogosTextArea {
+                                    id: bootstrapAddresses
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 72
                                     enabled: root.backend && root.backend.settingsEditable
@@ -355,6 +388,16 @@ Item {
                                         bootstrapNodes.setProperty(index, "addrsText", text)
                                         root.markDirty()
                                     }
+                                }
+
+                                LogosText {
+                                    Layout.fillWidth: true
+                                    visible: bootstrapAddresses.text.trim().length > 0
+                                             && !InputValidation.areMultiaddresses(root.lines(bootstrapAddresses.text))
+                                    text: "Enter valid IP/DNS multiaddresses with a TCP or UDP port."
+                                    font.pixelSize: Theme.typography.secondaryText
+                                    color: Theme.palette.warning
+                                    wrapMode: Text.Wrap
                                 }
                             }
                         }

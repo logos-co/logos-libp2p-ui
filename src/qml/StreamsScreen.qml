@@ -2,12 +2,14 @@ import QtQuick
 import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
+import "InputValidation.js" as InputValidation
 
 Item {
     id: root
 
     property var backend: null
     readonly property bool running: backend && backend.status === 2
+
     readonly property var metrics: backend && backend.metrics !== undefined ? backend.metrics : ({})
     readonly property var ping: backend && backend.lastPingResult !== undefined ? backend.lastPingResult : ({})
     readonly property var protocolRows: metrics.streamsByProtocol || []
@@ -104,8 +106,9 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         LogosTextField { id: peerIdField; Layout.fillWidth: true; enabled: root.running; placeholderText: "Connected peer ID"; onTextChanged: root.successMessage = "" }
-                        LogosButton { text: "Ping"; variant: LogosButton.Variant.Primary; enabled: root.running && peerIdField.text.trim().length > 0; onClicked: root.backend.pingPeer(peerIdField.text) }
+                        LogosButton { text: "Ping"; variant: LogosButton.Variant.Primary; enabled: root.running && InputValidation.isPeerId(peerIdField.text); onClicked: root.backend.pingPeer(peerIdField.text.trim()) }
                     }
+                    LogosText { Layout.fillWidth: true; visible: peerIdField.text.trim().length > 0 && !InputValidation.isPeerId(peerIdField.text); text: "Enter a valid base58 or CIDv1 libp2p peer ID."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.warning; wrapMode: Text.Wrap }
                     LogosText { Layout.fillWidth: true; visible: root.successMessage.length > 0; text: root.successMessage; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.success; wrapMode: Text.Wrap }
                     LogosText { Layout.fillWidth: true; visible: ping.success === true; text: "Last successful ping: " + ping.peerId + " in " + ping.latencyMs + " ms."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textTertiary; wrapMode: Text.Wrap }
                 }

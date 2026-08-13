@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
+import "InputValidation.js" as InputValidation
 
 Item {
     id: root
@@ -134,16 +135,18 @@ Item {
                     spacing: Theme.spacing.medium
                     LogosText { text: "Connect peer"; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightMedium; color: Theme.palette.text }
                     LogosTextField { id: peerIdField; Layout.fillWidth: true; enabled: root.running; placeholderText: "Peer ID"; onTextChanged: root.successMessage = "" }
+                    LogosText { Layout.fillWidth: true; visible: peerIdField.text.trim().length > 0 && !InputValidation.isPeerId(peerIdField.text); text: "Enter a valid base58 or CIDv1 libp2p peer ID."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.warning; wrapMode: Text.Wrap }
                     RowLayout {
                         Layout.fillWidth: true
                         LogosTextField { id: multiaddrField; Layout.fillWidth: true; enabled: root.running; placeholderText: "Multiaddress (for example /ip4/127.0.0.1/tcp/9000)"; onTextChanged: root.successMessage = "" }
                         LogosButton {
                             text: "Connect"
                             variant: LogosButton.Variant.Primary
-                            enabled: root.running && peerIdField.text.trim().length > 0 && multiaddrField.text.trim().length > 0
-                            onClicked: root.backend.connectPeer(peerIdField.text, multiaddrField.text)
+                            enabled: root.running && InputValidation.isPeerId(peerIdField.text) && InputValidation.isMultiaddress(multiaddrField.text)
+                            onClicked: root.backend.connectPeer(peerIdField.text.trim(), multiaddrField.text.trim())
                         }
                     }
+                    LogosText { Layout.fillWidth: true; visible: multiaddrField.text.trim().length > 0 && !InputValidation.isMultiaddress(multiaddrField.text); text: "Enter a valid IP/DNS multiaddress with a TCP or UDP port."; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.warning; wrapMode: Text.Wrap }
                 }
             }
 
