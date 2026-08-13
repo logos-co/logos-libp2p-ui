@@ -5,6 +5,8 @@ var peerIdPattern = new RegExp("^(?:Qm" + base58 + "{44}|1" + base58 + "{19,199}
 var privateKeyPattern = /^(?:[0-9a-fA-F]{2})+$/
 var multiaddressPattern = /^\/(?:ip4|ip6|dns|dns4|dns6|dnsaddr)\/[^\/\s]+(?:\/[a-z0-9][a-z0-9-]*(?:\/[^\/\s]+)?)*$/i
 var transportPattern = /\/(?:tcp|udp)\/(\d{1,5})(?:\/|$)/
+var cidV0Pattern = new RegExp("^Qm" + base58 + "{44}$")
+var cidV1Pattern = /^(?:[bB][A-Za-z2-7]{20,200}|[kK][0-9A-Za-z]{20,200}|z[1-9A-HJ-NP-Za-km-z]{20,200})$/
 
 function isPeerId(value) {
     return peerIdPattern.test(String(value).trim())
@@ -13,6 +15,11 @@ function isPeerId(value) {
 function isOptionalPrivateKey(value) {
     var key = String(value).trim()
     return key.length === 0 || privateKeyPattern.test(key)
+}
+
+function isCid(value) {
+    var cid = String(value).trim()
+    return cidV0Pattern.test(cid) || cidV1Pattern.test(cid)
 }
 
 function isMultiaddress(value) {

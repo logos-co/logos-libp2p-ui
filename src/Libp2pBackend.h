@@ -34,6 +34,17 @@ class Libp2pBackend : public Libp2pBackendSimpleSource {
     void refreshMetrics() override;
     void pingPeer(QString peerId) override;
     void dhtFindPeer(QString peerId) override;
+    void dhtResolvePeer(QString peerId) override;
+    void dhtPutValue(QString key, QString value, QString encoding) override;
+    void dhtGetValue(QString key, int quorum) override;
+    void dhtCreateCid(QString key) override;
+    void dhtAddProvider(QString cid) override;
+    void dhtStartProviding(QString cid) override;
+    void dhtStopProviding(QString cid) override;
+    void dhtGetProviders(QString cid) override;
+    void dhtGetRandomRecords() override;
+    void dhtRefreshRouting() override;
+    void clearDhtOperationHistory() override;
     void serviceDiscoveryAdvertise(QString serviceId, QString serviceData) override;
     void serviceDiscoveryStopAdvertising(QString serviceId) override;
     void serviceDiscoveryLookup(QString serviceId, QString serviceData) override;
@@ -62,6 +73,9 @@ class Libp2pBackend : public Libp2pBackendSimpleSource {
     void clearRuntimeInfo();
     void updateMetricsTimer();
     void resetMetricHistory();
+    bool beginDhtOperation(const QString& operation, const QString& target = QString());
+    void finishDhtOperation(const QString& operation, const QString& target,
+                            bool success, const QString& message = QString());
 
     LogosAPI* m_logosAPI = nullptr;
     LogosModules* m_logos = nullptr;
@@ -77,4 +91,5 @@ class Libp2pBackend : public Libp2pBackendSimpleSource {
     qint64 m_previousMetricsTimestampMs = 0;
     double m_peakReceiveRate = 0;
     double m_peakSendRate = 0;
+    QElapsedTimer m_dhtOperationTimer;
 };
