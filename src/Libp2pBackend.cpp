@@ -472,6 +472,10 @@ void Libp2pBackend::start() {
 
     setStatus(Running);
     setSettingsEditable(false);
+    // Persist only after the node has actually started.  This makes the
+    // configuration loaded during the next application launch match the
+    // configuration used by the last successful start.
+    persistConfig();
     resetMetricHistory();
     m_nodeUptime.start();
     updateMetricsTimer();

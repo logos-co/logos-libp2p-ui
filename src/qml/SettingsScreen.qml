@@ -182,7 +182,9 @@ Item {
                     }
 
                     LogosText {
-                        text: root.dirty ? "Unsaved changes" : "Applied configuration"
+                        text: root.dirty
+                              ? "Unsaved changes"
+                              : "Applied configuration is saved and restored when the app is reopened"
                         font.pixelSize: Theme.typography.secondaryText
                         color: root.dirty ? Theme.palette.warning : Theme.palette.textTertiary
                     }
